@@ -50,3 +50,11 @@ class ScreenshotArgs(BaseModel):
     """Request a new screenshot of the current page."""
 
     reason: str = Field(default="", description="Reason for requesting screenshot")
+
+
+class LoadSkillArgs(BaseModel):
+    """Load a specialized skill prompt for domain-specific tasks."""
+
+    skill_name: str = Field(
+        description="Name of the skill to load (e.g., 'whatsapp-web', 'linkedin-automation')"
+    )

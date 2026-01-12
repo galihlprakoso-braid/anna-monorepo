@@ -4,16 +4,33 @@ This node invokes the LLM to decide what action to take based on
 the current state (messages, screenshot).
 """
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
+from pathlib import Path
 
-from agents.browser_agent.prompts.system import SYSTEM_PROMPT
+from langchain_core.messages import SystemMessage
+from langchain_openai import ChatOpenAI
+
 from agents.browser_agent.state import AgentState
 from agents.browser_agent.tools.browser_tools import browser_tools
+from agents.shared.prompt_loader import load_prompt
+
+# Path to system prompt (relative to this file)
+SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "system.prompt.md"
 
 # Lazy model initialization - only create when needed
-# Using GPT-4o for good vision + reasoning balance
+# Using GPT-5-mini for good vision + reasoning balance
 _model = None
+_system_prompt = None
+
+
+def get_system_prompt() -> str:
+    """Get or load the system prompt.
+
+    Lazy loading ensures file is only read once and cached in memory.
+    """
+    global _system_prompt
+    if _system_prompt is None:
+        _system_prompt = load_prompt(SYSTEM_PROMPT_PATH)
+    return _system_prompt
 
 
 def get_model():
@@ -45,7 +62,7 @@ def model_node(state: AgentState) -> dict:
     messages = state.messages
 
     # Create system message with the browser automation prompt
-    system_message = SystemMessage(content=SYSTEM_PROMPT)
+    system_message = SystemMessage(content=get_system_prompt())
 
     # Get model instance and invoke with system message + conversation messages
     model = get_model()

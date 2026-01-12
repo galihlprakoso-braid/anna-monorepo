@@ -15,6 +15,7 @@ from agents.browser_agent.models import (
     TypeArgs,
     WaitArgs,
 )
+from agents.browser_agent.tools.skill_tools import skill_tools
 
 
 @tool(args_schema=ClickArgs)
@@ -86,4 +87,4 @@ def screenshot(reason: str = "") -> str:
 
 
 # Export all browser tools as a list for binding to the model
-browser_tools = [click, type_text, scroll, drag, wait, screenshot]
+browser_tools = [click, type_text, scroll, drag, wait, screenshot] + skill_tools

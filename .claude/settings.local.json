@@ -4,7 +4,14 @@
       "WebSearch",
       "Bash(find:*)",
       "Bash(xargs ls:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(uv sync:*)",
+      "Bash(timeout 10 langgraph dev:*)",
+      "Bash(.venv/bin/alembic init:*)",
+      "Bash(.venv/bin/alembic revision:*)",
+      "Bash(uv init:*)",
+      "Bash(uv add:*)",
+      "Bash(.venv/bin/alembic upgrade head)"
     ]
   }
 }

@@ -1,26 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
-import { useBrowserAgent, toggleDebugGrid, type AgentMessage } from '@extension/agents';
+import { useChatAgent, type ChatMessage } from '@extension/agents';
 
-function MessageBubble({ message }: { message: AgentMessage }) {
+function MessageBubble({ message }: { message: ChatMessage }) {
   const roleStyles: Record<string, string> = {
     user: 'bg-blue-500 text-white ml-auto',
     assistant: 'bg-gray-200 text-gray-900',
-    thought: 'bg-yellow-100 text-yellow-800 italic text-sm',
-    action: 'bg-purple-100 text-purple-800 font-mono text-sm',
-    observation: 'bg-green-100 text-green-800 text-sm',
-  };
-
-  const roleLabels: Record<string, string> = {
-    user: '',
-    assistant: '',
-    thought: 'Thinking:',
-    action: 'Action:',
-    observation: 'Result:',
   };
 
   return (
     <div className={`max-w-[85%] rounded-lg px-4 py-2 ${roleStyles[message.role] || 'bg-gray-100'}`}>
-      {roleLabels[message.role] && <div className="text-xs font-semibold mb-1">{roleLabels[message.role]}</div>}
       <div className="whitespace-pre-wrap break-words">{message.content}</div>
     </div>
   );
@@ -34,24 +22,15 @@ function ThinkingIndicator() {
         <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
         <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
       </div>
-      <span className="text-sm">Analyzing...</span>
+      <span className="text-sm">Anna is typing...</span>
     </div>
   );
 }
 
 export function ChatUI() {
   const [input, setInput] = useState('');
-  const [showGrid, setShowGrid] = useState(false);
-  const { messages, isRunning, sendMessage, clear } = useBrowserAgent();
+  const { messages, isRunning, sendMessage, clear } = useChatAgent();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const handleToggleGrid = async () => {
-    const newState = !showGrid;
-    const success = await toggleDebugGrid(newState);
-    if (success) {
-      setShowGrid(newState);
-    }
-  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -69,30 +48,22 @@ export function ChatUI() {
     <div className="flex flex-col h-screen bg-white">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-        <h1 className="text-lg font-semibold text-gray-800">Browser Agent</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={handleToggleGrid}
-            className={`text-sm px-2 py-1 rounded ${showGrid ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700'} hover:opacity-80`}
-          >
-            {showGrid ? 'Hide Grid' : 'Show Grid'}
-          </button>
-          <button
-            onClick={clear}
-            disabled={isRunning}
-            className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"
-          >
-            Clear
-          </button>
-        </div>
+        <h1 className="text-lg font-semibold text-gray-800">Anna</h1>
+        <button
+          onClick={clear}
+          disabled={isRunning}
+          className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50"
+        >
+          Clear
+        </button>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center text-gray-400 mt-8">
-            <p className="text-lg mb-2">Tell me what to do on this page</p>
-            <p className="text-sm">e.g., "Click the search button" or "Scroll down"</p>
+            <p className="text-lg mb-2">Hi! I'm Anna, your parenting assistant</p>
+            <p className="text-sm">Ask me anything about school, health, or scheduling</p>
           </div>
         )}
         {messages.map((msg, i) => (
@@ -109,7 +80,7 @@ export function ChatUI() {
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="What should I do?"
+            placeholder="Ask Anna anything..."
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={isRunning}
           />

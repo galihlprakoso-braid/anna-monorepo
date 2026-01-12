@@ -15,11 +15,11 @@ anna-monorepo/
 │   │   └── src/background/     # Message handlers for browser automation
 │   ├── pages/                  # Extension UI entry points
 │   │   ├── side-panel/         # Browser agent UI (primary interface)
-│   │   ├── popup/              # Extension toolbar popup
 │   │   ├── content/            # Content scripts injected into pages
 │   │   ├── content-ui/         # React components injected into pages
-│   │   └── options/            # Extension settings page
+│   │   └── content-runtime/    # Runtime injectable content scripts
 │   ├── packages/               # Shared utilities
+│   │   ├── agents/             # AI agent implementations (browser agent)
 │   │   ├── shared/             # Types, hooks, components, utilities
 │   │   ├── ui/                 # UI component library
 │   │   ├── storage/            # Chrome storage API helpers
@@ -85,17 +85,14 @@ pnpm i <package> -F <module-name>      # Package-specific (e.g., -F @extension/s
 
 | Page | Purpose |
 |------|---------|
-| `popup` | Toolbar popup UI |
+| `side-panel` | Chrome 114+ side panel (primary interface with browser agent) |
 | `content` | Scripts injected into web pages |
 | `content-ui` | React components injected into pages |
 | `content-runtime` | Runtime injectable content scripts |
-| `side-panel` | Chrome 114+ side panel |
-| `options` | Extension settings page |
-| `new-tab` | New Tab override |
-| `devtools` / `devtools-panel` | DevTools integration |
 
 ### Shared Packages (`packages/`)
 
+- `@extension/agents` - AI agent implementations (LangGraph browser agent)
 - `@extension/shared` - Types, hooks, components, utilities
 - `@extension/storage` - Chrome storage API helpers
 - `@extension/ui` - UI component library (shadcn/ui compatible)
@@ -104,7 +101,7 @@ pnpm i <package> -F <module-name>      # Package-specific (e.g., -F @extension/s
 
 ### Dependency Flow
 
-Pages → `@extension/ui`, `@extension/i18n` → `@extension/shared`, `@extension/storage` → `chrome-extension` (background)
+Pages → `@extension/agents`, `@extension/ui`, `@extension/i18n` → `@extension/shared`, `@extension/storage` → `chrome-extension` (background)
 
 All internal dependencies use `workspace:*` references.
 
@@ -150,7 +147,7 @@ The extension includes a LangGraph-powered browser automation agent accessible v
 │  Chrome Extension Side Panel (clients/chrome-extension/)         │
 │  ┌────────────────────┐         ┌──────────────────────────┐     │
 │  │  ChatUI.tsx        │────────▶│  useBrowserAgent hook    │     │
-│  │  (React UI)        │         │  (@langchain/sdk/react)  │     │
+│  │  (React UI)        │         │  (@extension/agents)     │     │
 │  └────────────────────┘         └─────────┬────────────────┘     │
 └────────────────────────────────────────────┼──────────────────────┘
                                              │ HTTP (interrupt/resume)
@@ -190,13 +187,13 @@ The extension includes a LangGraph-powered browser automation agent accessible v
 #### Frontend (Chrome Extension)
 | File | Purpose |
 |------|---------|
-| `pages/side-panel/src/hooks/useBrowserAgent.ts` | LangGraph SDK hook managing server communication with interrupt/resume |
+| `packages/agents/lib/browser_agent/hooks/useBrowserAgent.ts` | LangGraph SDK hook managing server communication with interrupt/resume |
+| `packages/agents/lib/browser_agent/services/chromeMessaging.ts` | Chrome runtime message bridge for screenshots and actions |
+| `packages/agents/lib/browser_agent/services/toolExecutor.ts` | Executes tool calls by dispatching to background script |
+| `packages/agents/lib/browser_agent/types/serverTypes.ts` | TypeScript types for server communication |
+| `packages/agents/lib/browser_agent/types/agentTypes.ts` | Agent message types for UI display |
 | `pages/side-panel/src/components/ChatUI.tsx` | React chat interface with message display and input |
-| `pages/side-panel/src/agent/services/chromeMessaging.ts` | Chrome runtime message bridge for screenshots and actions |
-| `pages/side-panel/src/agent/services/toolExecutor.ts` | Executes tool calls by dispatching to background script |
-| `pages/side-panel/src/agent/services/serverTypes.ts` | TypeScript types for server communication |
-| `pages/side-panel/src/agent/types.ts` | Agent message types for UI display |
-| `chrome-extension/src/background/index.ts` | Background service worker with message handlers and content script injection |
+| `chrome-extension/src/background/index.ts` | Background service worker with message handlers, sidepanel opener, and content script injection |
 
 #### Backend (LangGraph Server)
 | File | Purpose |

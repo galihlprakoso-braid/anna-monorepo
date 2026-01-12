@@ -1,0 +1,9 @@
+{
+  "extends": "@extension/tsconfig/module",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "outDir": "dist",
+    "types": ["node", "chrome"]
+  },
+  "include": ["index.mts", "lib"]
+}

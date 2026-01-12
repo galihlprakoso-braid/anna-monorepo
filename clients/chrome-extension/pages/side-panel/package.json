@@ -20,14 +20,11 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@extension/agents": "workspace:*",
     "@extension/i18n": "workspace:*",
     "@extension/shared": "workspace:*",
     "@extension/storage": "workspace:*",
-    "@extension/ui": "workspace:*",
-    "@langchain/langgraph-sdk": "^1.5.2",
-    "@langchain/openai": "^1.2.1",
-    "langchain": "^1.2.7",
-    "zod": "^4.3.5"
+    "@extension/ui": "workspace:*"
   },
   "devDependencies": {
     "@extension/tailwindcss-config": "workspace:*",

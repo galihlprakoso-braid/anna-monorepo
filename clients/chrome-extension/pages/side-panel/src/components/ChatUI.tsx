@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useBrowserAgent } from '../hooks/useBrowserAgent';
-import { toggleDebugGrid } from '../agent/services/chromeMessaging';
-import type { AgentMessage } from '../agent/types';
+import { useBrowserAgent, toggleDebugGrid, type AgentMessage } from '@extension/agents';
 
 function MessageBubble({ message }: { message: AgentMessage }) {
   const roleStyles: Record<string, string> = {

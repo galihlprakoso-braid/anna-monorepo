@@ -7,6 +7,13 @@ exampleThemeStorage.get().then(theme => {
 
 console.log('Background loaded');
 
+// Auto-open sidepanel when extension icon is clicked
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id) {
+    chrome.sidePanel.open({ tabId: tab.id });
+  }
+});
+
 // Message types for browser automation
 type MessageType =
   | { type: 'CAPTURE_SCREENSHOT' }

@@ -1,5 +1,7 @@
 # LangGraph Migration - Verification & Cleanup Report
 
+> **Update (2026-01-12):** This server has been refactored from `servers/extension_agent/` to `servers/agents/` to support multiple LangGraph agents. The `browser_agent` functionality remains identical.
+
 **Date:** 2026-01-12
 **Status:** ✅ Complete & Verified
 

@@ -1,5 +1,7 @@
 # LangGraph Server Migration - Implementation Complete
 
+> **Update (2026-01-12):** This server has been refactored from `servers/extension_agent/` to `servers/agents/` to support multiple LangGraph agents. The `browser_agent` functionality remains identical. See the new multi-agent structure in `servers/agents/`.
+
 ## Summary
 
 Successfully migrated the ANNA browser automation agent from client-side LangChain to server-side LangGraph using the interrupt pattern for bidirectional communication.

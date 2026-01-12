@@ -14,10 +14,30 @@ anna-monorepo/
 │   ├── chrome-extension/       # Background service worker and manifest
 │   │   └── src/background/     # Message handlers for browser automation
 │   ├── pages/                  # Extension UI entry points
-│   │   └── side-panel/         # Browser agent UI (primary interface)
-│   │       └── src/agent/      # LangChain agent implementation
-│   ├── packages/               # Shared utilities (ui, storage, i18n, shared, env, etc.)
+│   │   ├── side-panel/         # Browser agent UI (primary interface)
+│   │   ├── popup/              # Extension toolbar popup
+│   │   ├── content/            # Content scripts injected into pages
+│   │   ├── content-ui/         # React components injected into pages
+│   │   └── options/            # Extension settings page
+│   ├── packages/               # Shared utilities
+│   │   ├── shared/             # Types, hooks, components, utilities
+│   │   ├── ui/                 # UI component library
+│   │   ├── storage/            # Chrome storage API helpers
+│   │   ├── i18n/               # Internationalization
+│   │   ├── env/                # Environment variables
+│   │   └── dev-utils/          # Development utilities
 │   └── tests/e2e/              # WebdriverIO E2E tests
+├── servers/agents/              # LangGraph agents server (multi-agent support)
+│   ├── src/agents/
+│   │   ├── browser_agent/      # Browser automation agent
+│   │   │   ├── agent.py        # Main graph definition
+│   │   │   ├── nodes/          # Model and tool nodes
+│   │   │   ├── tools/          # Browser tool definitions
+│   │   │   ├── prompts/        # System prompts
+│   │   │   └── state.py        # Agent state types
+│   │   └── shared/             # Common utilities (future)
+│   ├── langgraph.json          # LangGraph configuration (multi-graph)
+│   └── pyproject.toml          # Python dependencies
 └── docs/                       # Documentation (langchain docs, MCP library, projects)
 ```
 
@@ -121,84 +141,182 @@ pnpm e2e          # Runs all E2E tests after building/zipping
 
 ## Browser Automation Agent
 
-The extension includes a LangChain-powered browser automation agent accessible via the Chrome side panel.
+The extension includes a LangGraph-powered browser automation agent accessible via the Chrome side panel.
 
 ### Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Side Panel (pages/side-panel/)                                 │
-│  ┌──────────────────┐    ┌─────────────────────────────────┐    │
-│  │   ChatUI.tsx     │───▶│   agent/index.ts                │    │
-│  │   (React UI)     │    │   (LangChain Agent + Tools)     │    │
-│  └──────────────────┘    └───────────────┬─────────────────┘    │
-└──────────────────────────────────────────┼──────────────────────┘
-                                           │ chrome.runtime.sendMessage
-                                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Background Script (chrome-extension/src/background/)           │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Message Handlers: CAPTURE_SCREENSHOT, BROWSER_ACTION,   │   │
-│  │  TOGGLE_DEBUG_GRID                                       │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                          │ chrome.scripting.executeScript       │
-│                          ▼                                      │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Content Script Injection (executeBrowserAction)         │   │
-│  │  Runs in web page context to perform DOM interactions    │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Chrome Extension Side Panel (clients/chrome-extension/)         │
+│  ┌────────────────────┐         ┌──────────────────────────┐     │
+│  │  ChatUI.tsx        │────────▶│  useBrowserAgent hook    │     │
+│  │  (React UI)        │         │  (@langchain/sdk/react)  │     │
+│  └────────────────────┘         └─────────┬────────────────┘     │
+└────────────────────────────────────────────┼──────────────────────┘
+                                             │ HTTP (interrupt/resume)
+                                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  LangGraph Server (servers/agents/)                              │
+│  ┌────────────────┐      ┌──────────────┐      ┌──────────────┐ │
+│  │  model_node    │─────▶│  tool_node   │──────│  Interrupt   │ │
+│  │  (GPT-5-mini)  │◀─────│  (Sends      │      │  (Wait for   │ │
+│  └────────────────┘      │   interrupt) │      │   client)    │ │
+│                          └──────────────┘      └──────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+                                             ▲
+                                             │ Resume with result
+                                             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Chrome Background Script (chrome-extension/src/background/)     │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Message Handlers:                                         │  │
+│  │  - CAPTURE_SCREENSHOT → Get viewport screenshot           │  │
+│  │  - BROWSER_ACTION → Execute tool (click, type, etc.)      │  │
+│  │  - TOGGLE_DEBUG_GRID → Show/hide coordinate grid          │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                          │ chrome.scripting.executeScript        │
+│                          ▼                                        │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  Content Script Injection (executeBrowserAction)           │  │
+│  │  - Runs in web page context                                │  │
+│  │  - Performs DOM interactions (click, type, scroll, etc.)   │  │
+│  │  - Shows visual feedback (click animations, grid overlay)  │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Files
 
+#### Frontend (Chrome Extension)
 | File | Purpose |
 |------|---------|
-| `pages/side-panel/src/agent/index.ts` | Main agent loop using LangChain `createAgent` |
-| `pages/side-panel/src/agent/prompts.ts` | System prompt with 100x100 grid instructions |
-| `pages/side-panel/src/agent/tools/` | Tool definitions (click, type, scroll, drag, wait, screenshot) |
-| `pages/side-panel/src/agent/services/chromeMessaging.ts` | Chrome runtime message bridge |
-| `pages/side-panel/src/components/ChatUI.tsx` | React chat interface |
-| `pages/side-panel/src/hooks/useAgent.ts` | React hook for agent state management |
-| `chrome-extension/src/background/index.ts` | Background service worker handling automation messages |
+| `pages/side-panel/src/hooks/useBrowserAgent.ts` | LangGraph SDK hook managing server communication with interrupt/resume |
+| `pages/side-panel/src/components/ChatUI.tsx` | React chat interface with message display and input |
+| `pages/side-panel/src/agent/services/chromeMessaging.ts` | Chrome runtime message bridge for screenshots and actions |
+| `pages/side-panel/src/agent/services/toolExecutor.ts` | Executes tool calls by dispatching to background script |
+| `pages/side-panel/src/agent/services/serverTypes.ts` | TypeScript types for server communication |
+| `pages/side-panel/src/agent/types.ts` | Agent message types for UI display |
+| `chrome-extension/src/background/index.ts` | Background service worker with message handlers and content script injection |
+
+#### Backend (LangGraph Server)
+| File | Purpose |
+|------|---------|
+| `servers/agents/src/agents/browser_agent/agent.py` | Main graph definition with model_node → tool_node flow |
+| `servers/agents/src/agents/browser_agent/nodes/model_node.py` | LLM reasoning node (GPT-5-mini with tool binding) |
+| `servers/agents/src/agents/browser_agent/nodes/tool_node.py` | Tool execution via interrupt/resume pattern |
+| `servers/agents/src/agents/browser_agent/tools/browser_tools.py` | Tool schemas (click, type_text, scroll, drag, wait, screenshot) |
+| `servers/agents/src/agents/browser_agent/prompts/system.py` | System prompt with grid coordinate instructions |
+| `servers/agents/src/agents/browser_agent/state.py` | Agent state types (AgentState, BrowserToolCall, BrowserToolResult) |
+| `servers/agents/langgraph.json` | LangGraph server configuration (multi-graph support) |
 
 ### Agent Tools
 
-The agent uses a **100x100 grid coordinate system** where (0,0) is top-left and (100,100) is bottom-right:
+The agent uses a **100x100 grid coordinate system** where (0,0) is top-left and (100,100) is bottom-right. All coordinates are automatically converted to pixel positions based on viewport size.
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `click` | Click at grid position | `x`, `y` (0-100) |
-| `type` | Type text at cursor | `text` |
-| `scroll` | Scroll page | `direction` (up/down/left/right), `amount` |
-| `drag` | Drag between points | `startX`, `startY`, `endX`, `endY` |
-| `wait` | Pause execution | `ms` |
-| `screenshot` | Capture current state | `reason` (optional) |
+| Tool | Description | Parameters | Implementation |
+|------|-------------|------------|----------------|
+| `click` | Click at grid position | `x`, `y` (0-100) | Converts to pixels, dispatches mouse events at coordinates |
+| `type_text` | Type text at cursor | `text` | Sets value in focused input or dispatches keyboard events |
+| `scroll` | Scroll page | `direction` (up/down/left/right), `amount` (pixels, default: 300) | Calls window.scrollBy() |
+| `drag` | Drag between points | `start_x`, `start_y`, `end_x`, `end_y` (0-100) | Dispatches mousedown → mousemove → mouseup events |
+| `wait` | Pause execution | `ms` (milliseconds) | JavaScript setTimeout delay |
+| `screenshot` | Capture current state | `reason` (optional string) | Uses chrome.tabs.captureVisibleTab() |
 
 ### Communication Flow (LangGraph Server Architecture)
 
-1. User sends message via ChatUI
-2. `useBrowserAgent` hook captures screenshot and sends to LangGraph server
-3. Server (Python) processes with OpenAI GPT-4o model via LangGraph
-4. When tool call needed, server sends **interrupt** to client
-5. Client executes browser action via background script
-6. Client captures new screenshot and **resumes** server with result
-7. Server continues loop until task complete
-8. Results stream back to UI via `@langchain/langgraph-sdk/react`
+1. **User Input**: User types message in ChatUI and clicks Send
+2. **Initial Screenshot**: `useBrowserAgent` hook captures viewport screenshot via background script
+3. **Server Invocation**: Client sends HTTP request to LangGraph server with:
+   - User message (text)
+   - Screenshot (base64 PNG data URL)
+   - Viewport dimensions
+4. **Model Decision**: Server's `model_node` processes request with GPT-5-mini:
+   - Analyzes screenshot using vision capabilities
+   - Decides on action (tool call) or response (text)
+5. **Tool Interrupt**: If tool needed, `tool_node` creates interrupt:
+   - Pauses graph execution
+   - Sends `BrowserToolCall` to client via HTTP stream
+   - Client's `useEffect` detects interrupt
+6. **Client Execution**: Client processes interrupt:
+   - `executeToolCall()` converts grid coordinates to pixels
+   - Sends message to background script via `chrome.runtime.sendMessage`
+   - Background script injects and runs `executeBrowserAction()` in page context
+   - Action performs DOM manipulation (click, type, scroll, etc.)
+   - Shows visual feedback (animations, grid overlay)
+7. **Result Capture**: After action completes:
+   - Captures new screenshot if requested
+   - Gets updated viewport dimensions
+   - Creates `BrowserToolResult` with execution outcome
+8. **Resume Server**: Client sends result back to server:
+   - Uses `thread.submit(undefined, { command: { resume: result } })`
+   - Server's `tool_node` receives result and continues
+9. **Loop**: Steps 4-8 repeat until task complete (model returns text response instead of tool call)
+10. **Streaming**: All messages stream back to UI in real-time via `useStream` hook
 
 ### Configuration
 
-- **Backend Server**: `servers/extension_agent/`
-  - Model: `gpt-4o` (configured in `model_node.py`)
-  - API Key: Set `OPENAI_API_KEY` in `servers/extension_agent/.env`
-  - Start with: `langgraph dev`
+#### Backend Server (Python)
 
-- **Frontend Extension**: `clients/chrome-extension/`
-  - API URL: Set `CEB_LANGGRAPH_API_URL=http://localhost:2024` in `.env`
-  - Uses `useStream` hook with interrupt/resume pattern
+```bash
+cd servers/agents
+
+# Install dependencies (uses uv for fast installs)
+uv sync
+
+# Set OpenAI API key
+echo "OPENAI_API_KEY=sk-..." > .env
+
+# Start LangGraph dev server (runs on http://localhost:2024)
+langgraph dev
+```
+
+- **Model**: GPT-5-mini (configured in `src/agents/browser_agent/nodes/model_node.py`)
+- **Python Version**: >=3.11
+- **Dependencies**: langchain-core, langchain-openai, langgraph, langgraph-cli
+- **Graph ID**: `browser_agent` (defined in `langgraph.json`)
+
+#### Frontend Extension (TypeScript)
+
+```bash
+cd clients/chrome-extension
+
+# Set LangGraph server URL
+echo "CEB_LANGGRAPH_API_URL=http://localhost:2024" > .env
+
+# Start development server
+pnpm dev
+```
+
+- **Framework**: React 19 + TypeScript + Vite
+- **SDK**: `@langchain/langgraph-sdk/react` (provides `useStream` hook)
+- **Communication**: HTTP streaming with interrupt/resume commands
+- **Reconnect**: Automatically resumes threads after page refresh
 
 ### Debug Features
 
-- **Grid Overlay**: Toggle 0-100 coordinate grid on page via "Show Grid" button
+- **Grid Overlay**: Toggle 0-100 coordinate grid overlay on the active page
+  - Shows grid lines at 10% intervals (0, 10, 20, ... 100)
+  - Corner labels indicate coordinate system
+  - Access via "Show Grid" button in side panel header
+  - Implemented in `background/index.ts → toggleDebugGrid()`
+
 - **Click Animation**: Red pulse animation shows where clicks occur
-- **Console Logging**: Detailed logs prefixed with `[Agent]` or `[Agent Content]`
+  - 20px circle with scale animation
+  - Helps verify clicks land in correct location
+  - Implemented in `background/index.ts → executeBrowserAction()`
+
+- **Console Logging**: Detailed execution logs
+  - `[Agent]` prefix for background script logs
+  - `[Agent Content]` prefix for injected content script logs
+  - `[useBrowserAgent]` prefix for React hook logs
+  - Logs include: coordinates, element info, action results, errors
+
+### Development Workflow
+
+1. Start LangGraph server: `cd servers/agents && langgraph dev`
+2. Start extension dev server: `cd clients/chrome-extension && pnpm dev`
+3. Load extension in Chrome from `clients/chrome-extension/dist/`
+4. Open side panel on any webpage
+5. Enable grid overlay to visualize coordinate system
+6. Enter commands like "Click the search button" or "Scroll down"
+7. Watch console logs for detailed execution trace

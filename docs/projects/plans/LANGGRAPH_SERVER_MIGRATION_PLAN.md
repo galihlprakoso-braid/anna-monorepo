@@ -1,5 +1,7 @@
 # LangGraph Server Migration Plan
 
+> **Update (2026-01-12):** This server has been refactored from `servers/extension_agent/` to `servers/agents/` to support multiple LangGraph agents. The `browser_agent` functionality remains identical.
+
 ## Executive Summary
 
 This plan outlines the migration of the ANNA browser automation agent from a client-side LangChain/LangGraph implementation to a **server-side LangGraph architecture** using **interrupts** for bidirectional communication between the Python server and the Chrome extension client.

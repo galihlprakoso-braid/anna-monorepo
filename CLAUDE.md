@@ -4,9 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ANNA is an AI assistant app that helps busy parents manage tasks related to their kids (school, education, health, etc.). The primary codebase is a Chrome Extension built with React, TypeScript, and Vite, featuring:
-- **Chat Agent** - Conversational AI assistant (Anna) for parenting advice and support
-- **Browser Agent** - Browser automation agent for web interactions (available for future use)
+ANNA is an AI assistant app that helps busy parents manage tasks related to their kids (school, education, health, etc.). The codebase consists of:
+- **Chrome Extension** - Built with React, TypeScript, and Vite
+  - **Chat Agent** - Conversational AI assistant (Anna) for parenting advice and support
+  - **Browser Agent** - Browser automation agent for web interactions (available for future use)
+- **Backend Services** - Task management API with database layer
+  - **Data Layer** - SQLAlchemy models + Alembic migrations (shared)
+  - **API Backend** - FastAPI REST API with Pydantic schemas
+  - **API Client** - TypeScript React Query hooks for Chrome extension
 
 ## Repository Structure
 
@@ -22,6 +27,7 @@ anna-monorepo/
 │   │   └── content-runtime/    # Runtime injectable content scripts
 │   ├── packages/               # Shared utilities
 │   │   ├── agents/             # AI agent implementations (chat agent, browser agent)
+│   │   ├── api/                # API client with React Query hooks (NEW)
 │   │   ├── shared/             # Types, hooks, components, utilities
 │   │   ├── ui/                 # UI component library
 │   │   ├── storage/            # Chrome storage API helpers
@@ -29,20 +35,46 @@ anna-monorepo/
 │   │   ├── env/                # Environment variables
 │   │   └── dev-utils/          # Development utilities
 │   └── tests/e2e/              # WebdriverIO E2E tests
-├── servers/agents/              # LangGraph agents server (multi-agent support)
-│   ├── src/agents/
-│   │   ├── chat_agent/         # Conversational assistant agent
-│   │   │   ├── agent.py        # Main graph definition
-│   │   │   └── prompts/        # System prompt (Anna personality)
-│   │   ├── browser_agent/      # Browser automation agent
-│   │   │   ├── agent.py        # Main graph definition
-│   │   │   ├── nodes/          # Model and tool nodes
-│   │   │   ├── tools/          # Browser tool definitions
-│   │   │   ├── prompts/        # System prompts
-│   │   │   └── state.py        # Agent state types
-│   │   └── shared/             # Common utilities
-│   ├── langgraph.json          # LangGraph configuration (multi-graph)
-│   └── pyproject.toml          # Python dependencies
+├── servers/
+│   ├── agents/                 # LangGraph agents server (multi-agent support)
+│   │   ├── src/agents/
+│   │   │   ├── chat_agent/     # Conversational assistant agent
+│   │   │   │   ├── agent.py    # Main graph definition
+│   │   │   │   └── prompts/    # System prompt (Anna personality)
+│   │   │   ├── browser_agent/  # Browser automation agent
+│   │   │   │   ├── agent.py    # Main graph definition
+│   │   │   │   ├── nodes/      # Model and tool nodes
+│   │   │   │   ├── tools/      # Browser tool definitions
+│   │   │   │   ├── prompts/    # System prompts
+│   │   │   │   └── state.py    # Agent state types
+│   │   │   └── shared/         # Common utilities
+│   │   ├── langgraph.json      # LangGraph configuration (multi-graph)
+│   │   └── pyproject.toml      # Python dependencies
+│   ├── data/                   # Data layer - SQLAlchemy models + Alembic migrations (NEW)
+│   │   ├── src/data/
+│   │   │   ├── models/         # SQLAlchemy ORM models
+│   │   │   │   └── task.py     # Task model with self-referential hierarchy
+│   │   │   ├── core/           # Database configuration
+│   │   │   │   ├── base.py     # Base model class
+│   │   │   │   └── database.py # Engine, session factory, get_db dependency
+│   │   │   └── migrations/     # Alembic migrations
+│   │   ├── alembic.ini         # Alembic configuration
+│   │   └── pyproject.toml      # Python dependencies
+│   └── api/                    # FastAPI backend - Task management API (NEW)
+│       ├── src/api/
+│       │   ├── core/           # Core configuration
+│       │   │   ├── config.py   # Settings (switchable auth/CORS)
+│       │   │   └── exceptions.py # Custom exceptions
+│       │   ├── task/           # Task feature (cohesion-based)
+│       │   │   ├── schemas.py  # Pydantic request/response models
+│       │   │   ├── mapper.py   # SQLAlchemy ↔ Pydantic conversion
+│       │   │   ├── service.py  # Business logic (CRUD, validation)
+│       │   │   └── router.py   # FastAPI endpoints
+│       │   └── main.py         # FastAPI application entry point
+│       ├── tests/              # Integration tests
+│       │   ├── conftest.py     # Pytest fixtures
+│       │   └── test_task_api.py # 22 integration tests
+│       └── pyproject.toml      # Python dependencies
 └── docs/                       # Documentation (langchain docs, MCP library, projects)
 ```
 
@@ -77,12 +109,25 @@ pnpm clean                  # Clean all build artifacts
 
 ### Installing Dependencies
 
+#### Frontend (Chrome Extension)
+
 ```bash
 pnpm i <package> -w                    # Root-level dependency
-pnpm i <package> -F <module-name>      # Package-specific (e.g., -F @extension/shared)
+pnpm i <package> -F <module-name>      # Package-specific (e.g., -F @extension/api)
 ```
 
 **IMPORTANT**: Never manually write version numbers in package.json. Always use `pnpm i` commands to install packages - this ensures you get the latest compatible versions and properly updates the lockfile.
+
+#### Backend (Python Services)
+
+```bash
+cd servers/api  # or servers/data
+uv add <package>           # Add dependency (gets latest version)
+uv add --dev <package>     # Add dev dependency
+uv sync                    # Install all dependencies
+```
+
+**IMPORTANT**: Never manually write version numbers in pyproject.toml. Always use `uv add` commands to install packages - this ensures you get the latest compatible versions and properly manages the lockfile.
 
 ## Architecture
 
@@ -98,6 +143,7 @@ pnpm i <package> -F <module-name>      # Package-specific (e.g., -F @extension/s
 ### Shared Packages (`packages/`)
 
 - `@extension/agents` - AI agent implementations (chat agent, browser agent)
+- `@extension/api` - API client with React Query hooks for Task API (NEW)
 - `@extension/shared` - Types, hooks, components, utilities
 - `@extension/storage` - Chrome storage API helpers
 - `@extension/ui` - UI component library (shadcn/ui compatible)
@@ -137,9 +183,15 @@ pnpm e2e          # Runs all E2E tests after building/zipping
 
 ## Requirements
 
+### Frontend (Chrome Extension)
 - Node.js >= 22.15.1 (see `.nvmrc`)
 - pnpm 10.11.0 (project uses pnpm workspaces)
 - Pre-commit hooks enforce Prettier + ESLint via Husky
+
+### Backend (Python Services)
+- Python >= 3.12 (see `pyproject.toml` in each service)
+- uv (fast Python package installer)
+- SQLite (development) or PostgreSQL (production)
 
 ## AI Agents
 
@@ -481,4 +533,454 @@ pytest tests/test_element_detection_integration.py -v -s
 | `tool_node.py` | UPDATED | Clears elements on new screenshot |
 | `prompts/system.prompt.md` | UPDATED | Element detection docs |
 | `prompts/skills/*.skill.prompt.md` | MIGRATED | Semantic descriptions |
+
+---
+
+## Backend Services (NEW)
+
+The ANNA app includes backend services for task management, built with clean architecture and separation of concerns.
+
+### Data Layer (`servers/data`)
+
+Shared data layer that owns database schema and migrations. Can be used by multiple services (API, agents, etc.).
+
+#### Architecture
+
+**Tech Stack:**
+- SQLAlchemy 2.0+ (ORM with modern `Mapped[]` syntax)
+- Alembic (database migrations)
+- SQLite (development) / PostgreSQL (production-ready)
+
+**Key Features:**
+- Self-referential Task model (parent-child hierarchy)
+- Lazy initialization pattern (singleton engine/session)
+- Switchable database backend via `DATABASE_URL` environment variable
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/data/models/task.py` | SQLAlchemy Task model with enums, relationships, JSON fields |
+| `src/data/core/database.py` | Database engine, session factory, `get_db()` dependency |
+| `src/data/core/base.py` | Base declarative class for all models |
+| `src/data/migrations/` | Alembic migration versions |
+| `alembic.ini` | Alembic configuration |
+
+#### Task Model Schema
+
+```python
+class TaskModel(Base):
+    # Core fields
+    id: str (UUID)
+    title: str
+    description: Optional[str]
+
+    # Status & Priority
+    status: TaskStatus (TODO, IN_PROGRESS, COMPLETED, CANCELLED)
+    priority: TaskPriority (LOW, MEDIUM, HIGH, URGENT)
+
+    # Timestamps
+    created_at: datetime
+    updated_at: datetime
+    due_date: Optional[datetime]
+    scheduled_date: Optional[datetime]
+    completed_at: Optional[datetime]
+
+    # Hierarchy (self-referential)
+    parent_task_id: Optional[str]  # Foreign key to tasks.id
+    subtasks: relationship to child tasks
+
+    # JSON fields (SQLite-compatible)
+    assignees: Optional[list[str]]  # user IDs or "AI"
+    recurrence_config: Optional[dict]
+    tags: Optional[list[str]]
+    extra_data: Optional[dict]  # Extensibility (calendar_event_id, etc.)
+
+    # Owner
+    owner_user_id: str  # Hardcoded for now, Firebase auth later
+```
+
+#### Database Commands
+
+```bash
+cd servers/data
+
+# Install dependencies
+uv sync
+
+# Create migration
+.venv/bin/alembic revision --autogenerate -m "Description"
+
+# Apply migrations
+.venv/bin/alembic upgrade head
+
+# Rollback
+.venv/bin/alembic downgrade -1
+```
+
+#### Database Configuration
+
+**Switchable backend via environment variable:**
+```bash
+# SQLite (development)
+DATABASE_URL=sqlite:///./data/tasks.db
+
+# PostgreSQL (production)
+DATABASE_URL=postgresql://user:password@localhost:5432/tasks
+```
+
+For MongoDB, would need to switch from SQLAlchemy to motor/beanie and refactor data layer.
+
+---
+
+### API Backend (`servers/api`)
+
+FastAPI REST API for task management with clean, cohesion-based architecture.
+
+#### Architecture
+
+**Tech Stack:**
+- FastAPI 0.128+ (async REST API with OpenAPI docs)
+- Pydantic 2.12+ (request/response validation)
+- uvicorn (ASGI server with auto-reload)
+
+**Architecture Pattern:**
+- **Cohesion-based structure**: Features grouped by domain (`task/`) rather than layers
+- **Service layer**: Business logic (CRUD, validation, circular reference prevention)
+- **Mapper layer**: Converts SQLAlchemy models ↔ Pydantic schemas
+- **Dependency injection**: Uses FastAPI's `Depends()` for database sessions
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/api/main.py` | FastAPI application with CORS, lifespan, routing |
+| `src/api/core/config.py` | Settings (switchable auth/CORS bypass) |
+| `src/api/core/exceptions.py` | Custom exceptions (NotFoundError, ValidationError) |
+| `src/api/task/schemas.py` | Pydantic models (TaskCreate, TaskUpdate, TaskResponse) |
+| `src/api/task/mapper.py` | Converts between SQLAlchemy and Pydantic |
+| `src/api/task/service.py` | Business logic (CRUD, hierarchy validation) |
+| `src/api/task/router.py` | REST API endpoints |
+| `tests/test_task_api.py` | 22 integration tests (all passing) |
+
+#### API Endpoints
+
+**Base URL:** `http://localhost:8000/api/v1`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/tasks/` | Create task |
+| `GET` | `/tasks/{id}` | Get task by ID |
+| `GET` | `/tasks/` | List tasks with filtering/pagination |
+| `PATCH` | `/tasks/{id}` | Update task |
+| `DELETE` | `/tasks/{id}` | Delete task (orphan or cascade children) |
+
+**Query Parameters:**
+- `parent_id` - Filter by parent ("root" for top-level tasks)
+- `status` - Filter by status (todo, in_progress, completed, cancelled)
+- `page` - Page number (default: 1)
+- `page_size` - Items per page (default: 50, max: 100)
+- `cascade` - For DELETE: recursively delete children (default: false)
+
+#### Running the API
+
+```bash
+cd servers/api
+
+# Install dependencies
+uv sync
+
+# Setup environment
+cp .env.example .env
+
+# Run server
+.venv/bin/python src/api/main.py
+
+# Or with uvicorn directly
+.venv/bin/uvicorn api.main:app --reload
+```
+
+Visit: http://localhost:8000/docs (Swagger UI auto-documentation)
+
+#### Configuration (Switchable)
+
+**`servers/api/.env`:**
+```env
+# Security bypass (development)
+BYPASS_AUTH=true   # Skip authentication, use DEFAULT_USER_ID
+BYPASS_CORS=true   # Allow all origins
+
+# Production: Set both to false
+# BYPASS_AUTH=false  # Enable Firebase auth
+# BYPASS_CORS=false  # Use strict CORS_ORIGINS list
+```
+
+#### Testing
+
+```bash
+cd servers/api
+.venv/bin/pytest tests/ -v
+```
+
+**Coverage:** 22 integration tests covering:
+- CRUD operations
+- Pagination & filtering
+- Task hierarchy (parent/child relationships)
+- Circular reference prevention
+- Cascade vs orphan deletion
+- Validation rules
+- Complete workflows
+
+---
+
+### API Client Package (`packages/api`)
+
+TypeScript API client for Chrome extension using Tanstack React Query.
+
+#### Architecture
+
+**Tech Stack:**
+- Tanstack React Query 5.0+ (data fetching, caching, mutations)
+- TypeScript (manual types matching Pydantic schemas)
+- Fetch API (HTTP client)
+
+**Key Features:**
+- Type-safe API client
+- React Query hooks for queries (useQuery) and mutations (useMutation)
+- Automatic cache invalidation
+- Optimistic updates
+- Error handling
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `lib/client.ts` | Base APIClient class with fetch wrapper |
+| `lib/task/types.ts` | TypeScript types (Task, TaskCreate, TaskUpdate, etc.) |
+| `lib/task/queries.ts` | React Query hooks (useTask, useTasks, useRootTasks, useSubtasks) |
+| `lib/task/mutations.ts` | Mutation hooks (useCreateTask, useUpdateTask, useDeleteTask, useToggleTask) |
+| `lib/query-client.ts` | React Query client configuration |
+| `lib/index.ts` | Package exports |
+
+#### Usage Example
+
+```typescript
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient, useRootTasks, useCreateTask, useToggleTask, TaskStatus } from '@extension/api';
+
+function TaskListContent() {
+  // Fetch root tasks
+  const { data: tasks, isLoading, error } = useRootTasks();
+
+  // Create task mutation
+  const createTask = useCreateTask();
+
+  // Toggle task completion
+  const toggleTask = useToggleTask();
+
+  const handleCreateTask = () => {
+    createTask.mutate({
+      title: 'New Task',
+      description: 'Task description',
+      priority: TaskPriority.HIGH,
+      dueDate: new Date('2026-01-20'),
+    });
+  };
+
+  const handleToggleTask = (taskId: string) => {
+    toggleTask.mutate(taskId);
+  };
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <div className="task-list">
+      <button onClick={handleCreateTask}>Create Task</button>
+
+      {tasks?.map(task => (
+        <div key={task.id}>
+          <h3>{task.title}</h3>
+          <p>{task.description}</p>
+          <span>Status: {task.status}</span>
+          <button onClick={() => handleToggleTask(task.id)}>
+            {task.status === TaskStatus.COMPLETED ? 'Reopen' : 'Complete'}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Wrap with QueryClientProvider
+export function TaskList() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TaskListContent />
+    </QueryClientProvider>
+  );
+}
+```
+
+#### React Query Hooks
+
+**Queries (Data Fetching):**
+- `useTask(taskId)` - Fetch single task by ID
+- `useTasks(params)` - List tasks with filters (status, parentId, pagination)
+- `useRootTasks()` - List top-level tasks (no parent)
+- `useSubtasks(parentId)` - List children of a parent task
+
+**Mutations (Data Modification):**
+- `useCreateTask()` - Create new task
+- `useUpdateTask()` - Update existing task
+- `useDeleteTask()` - Delete task (with cascade option)
+- `useToggleTask()` - Toggle task completion status
+
+**Query Keys:**
+- `taskKeys.all` - All task queries
+- `taskKeys.list(filters)` - List queries with specific filters
+- `taskKeys.detail(id)` - Single task query
+
+#### Environment Variables
+
+**Chrome Extension `.env`:**
+```env
+# API URL (optional, defaults to localhost:8000)
+VITE_API_URL=http://localhost:8000/api/v1
+```
+
+---
+
+### Backend Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Chrome Extension (packages/api)                             │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  React Query Hooks                                     │  │
+│  │  - useRootTasks() → GET /api/v1/tasks?parent_id=root  │  │
+│  │  - useCreateTask() → POST /api/v1/tasks/              │  │
+│  │  - useUpdateTask() → PATCH /api/v1/tasks/{id}         │  │
+│  └──────────────────────┬─────────────────────────────────┘  │
+└─────────────────────────┼────────────────────────────────────┘
+                          │ HTTP JSON
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│  FastAPI Backend (servers/api)                               │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Router (task/router.py)                               │  │
+│  │  - Validates requests (Pydantic)                       │  │
+│  │  - Calls TaskService                                   │  │
+│  └──────────────────────┬─────────────────────────────────┘  │
+│                         ▼                                     │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Service (task/service.py)                             │  │
+│  │  - Business logic (CRUD)                               │  │
+│  │  - Validation (circular references, parent exists)     │  │
+│  │  - Calls Mapper                                        │  │
+│  └──────────────────────┬─────────────────────────────────┘  │
+│                         ▼                                     │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Mapper (task/mapper.py)                               │  │
+│  │  - Converts Pydantic ↔ SQLAlchemy                      │  │
+│  │  - Queries subtask IDs                                 │  │
+│  └──────────────────────┬─────────────────────────────────┘  │
+└─────────────────────────┼────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Data Layer (servers/data)                                   │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  SQLAlchemy Models (models/task.py)                    │  │
+│  │  - TaskModel with self-referential relationship        │  │
+│  │  - Enums (TaskStatus, TaskPriority)                    │  │
+│  │  - JSON fields (assignees, recurrence_config, etc.)    │  │
+│  └──────────────────────┬─────────────────────────────────┘  │
+│                         ▼                                     │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │  Database (core/database.py)                           │  │
+│  │  - get_engine() - Lazy engine creation                 │  │
+│  │  - get_db() - Session dependency for FastAPI           │  │
+│  │  - init_db() - Create all tables                       │  │
+│  └──────────────────────┬─────────────────────────────────┘  │
+└─────────────────────────┼────────────────────────────────────┘
+                          │
+                          ▼
+                  ┌──────────────┐
+                  │   SQLite DB  │
+                  │ tasks.db     │
+                  └──────────────┘
+```
+
+### Development Workflow
+
+#### 1. Start Data Layer
+
+```bash
+cd servers/data
+uv sync
+.venv/bin/alembic upgrade head  # Apply migrations
+```
+
+#### 2. Start API Server
+
+```bash
+cd servers/api
+uv sync
+cp .env.example .env
+.venv/bin/python src/api/main.py
+```
+
+API runs at: http://localhost:8000
+Swagger docs: http://localhost:8000/docs
+
+#### 3. Use in Chrome Extension
+
+Add `@extension/api` to your package dependencies:
+```json
+{
+  "dependencies": {
+    "@extension/api": "workspace:*"
+  }
+}
+```
+
+Then use React Query hooks in components:
+```typescript
+import { useRootTasks, useCreateTask } from '@extension/api';
+```
+
+### Data Flow Example
+
+**Creating a task:**
+
+1. **UI**: User clicks "Create Task" → calls `createTask.mutate({ title: "..." })`
+2. **React Query**: Sends `POST /api/v1/tasks/` with JSON payload
+3. **FastAPI Router**: Validates request via Pydantic `TaskCreate` schema
+4. **Service**: Converts to `TaskModel` via mapper, checks parent exists
+5. **Data Layer**: Inserts into database via SQLAlchemy
+6. **Response**: Returns `TaskResponse` to client
+7. **React Query**: Invalidates task list cache, triggers refetch
+
+**Updating task status:**
+
+1. **UI**: User toggles task → calls `toggleTask.mutate(taskId)`
+2. **React Query**: Fetches current task, toggles status, sends `PATCH /api/v1/tasks/{id}`
+3. **Service**: Validates update, applies changes
+4. **React Query**: Updates cache with new task data
+
+### Testing
+
+**API Integration Tests:**
+```bash
+cd servers/api
+.venv/bin/pytest tests/ -v
+```
+
+- 22 tests covering all endpoints
+- In-memory SQLite (fast, isolated)
+- Tests: CRUD, pagination, hierarchy, validation, cascade delete
+
+---
 

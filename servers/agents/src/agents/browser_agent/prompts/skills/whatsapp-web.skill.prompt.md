@@ -4,51 +4,60 @@ You are now specialized in automating WhatsApp Web (web.whatsapp.com). This skil
 
 ## Interface Structure
 
-### Main Layout (0-100 grid coordinates)
-- **Left Sidebar** (x: 0-25): Contains chat list, search, and navigation
-  - Search bar: x=12, y=8
-  - Chat list: x=12, y=15-90
-  - New chat button: x=5, y=5 (top-left)
+### Main Layout
+- **Left Sidebar**: Contains chat list, search, and navigation
+  - Located on the left side of the screen (approximately x: 0-25)
+  - Contains search bar at the top
+  - Chat list items below search
+  - New chat button in top-left corner
 
-- **Chat View** (x: 25-100): Active conversation area
-  - Contact name/header: x=62, y=5
-  - Message area: x=62, y=15-85
-  - Message input box: x=62, y=92
-  - Attach button: x=30, y=92
-  - Send button: x=95, y=92
+- **Chat View**: Active conversation area
+  - Located on the right side (approximately x: 25-100)
+  - Contact name/header at the top
+  - Message area in the center
+  - Message input box at the bottom
+  - Attach button and send button near input box
 
-### Common Element Positions
-- **Search contacts**: Click x=12, y=8, then type
-- **Open chat**: Click on contact in list (x=12, y varies by position)
-- **Type message**: Click x=62, y=92, then type
-- **Send message**: Click x=95, y=92 OR press Enter after typing
-- **Scroll messages**: Use scroll(direction="up") in chat area
+### Element Identification
+
+Use the detected UI elements to find:
+
+- **Search bar**: Look for Input element with caption containing "Search", "Ask Meta AI", or similar, typically in the left sidebar
+- **Message input**: Look for Input element near the bottom of the chat view, caption may include "Type a message" or similar
+- **Send button**: Look for Button element with send icon or caption, positioned to the right of the message input
+- **Chat list items**: Text elements in the left sidebar showing contact names and recent messages
+- **New chat button**: Button or Icon in the top-left area of the left sidebar
+- **Attach button**: Button or Icon near the message input (usually left of input)
 
 ## Interaction Patterns
 
 ### Sending a Message
 1. **Find/search contact**:
-   - Click search bar (x=12, y=8)
+   - Locate the search bar in detected elements (look for Input with "Search" or "Ask Meta AI")
+   - Click the search bar coordinates
    - Type contact name
    - Wait 500ms for search results
 
 2. **Open chat**:
-   - Click on contact (typically x=12, y=20 for first result)
+   - Find the contact in detected elements (look for Text with matching contact name)
+   - Click on the contact's coordinates
    - Wait 700ms for chat to load
 
 3. **Type and send**:
-   - Click message input (x=62, y=92)
+   - Find the message input in detected elements (look for Input near bottom)
+   - Click the message input coordinates
    - Type message text
-   - Click send button (x=95, y=92) OR type_text("\n") to press Enter
+   - Find the send button (look for Button near input) and click OR type_text("\n") to press Enter
 
 ### Reading Messages
 1. **Scroll to see history**:
-   - Use scroll(direction="up", amount=500) to see older messages
-   - Take screenshot to verify content
+   - Use scroll(direction="up", amount=500) to see older messages in the chat area
+   - Take screenshot to verify content and get updated element positions
 
 2. **Finding specific chats**:
-   - Use search bar (x=12, y=8) to filter chat list
-   - Scroll chat list if needed (x=12, y=50, scroll direction="down")
+   - Locate and click the search bar from detected elements
+   - Type to filter chat list
+   - If needed, scroll the chat list area using scroll(direction="down")
 
 ### Handling Pop-ups
 - **QR Code screen**: If you see QR code, inform user they need to scan it manually

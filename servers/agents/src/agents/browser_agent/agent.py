@@ -10,6 +10,7 @@ This module defines the browser automation agent graph that:
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 
+from agents.browser_agent.nodes.element_detection_node import element_detection_node
 from agents.browser_agent.nodes.model_node import model_node
 from agents.browser_agent.nodes.tool_node import tool_node
 from agents.browser_agent.state import AgentState
@@ -53,11 +54,13 @@ def create_graph() -> StateGraph:
     builder = StateGraph(AgentState)
 
     # Add nodes
+    builder.add_node("element_detection_node", element_detection_node)
     builder.add_node("model_node", model_node)
     builder.add_node("tool_node", tool_node)
 
     # Add edges
-    builder.add_edge(START, "model_node")
+    builder.add_edge(START, "element_detection_node")
+    builder.add_edge("element_detection_node", "model_node")
     builder.add_conditional_edges(
         "model_node",
         should_continue,
@@ -66,8 +69,8 @@ def create_graph() -> StateGraph:
             END: END,
         },
     )
-    # Loop back after tool result to let model decide next action
-    builder.add_edge("tool_node", "model_node")
+    # Loop back after tool result through element detection to re-detect on new screenshot
+    builder.add_edge("tool_node", "element_detection_node")
 
     return builder
 

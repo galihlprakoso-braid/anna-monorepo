@@ -89,6 +89,8 @@ def tool_node(state: AgentState) -> dict:
     # Update state with new screenshot if provided
     if result.screenshot is not None:
         updates["current_screenshot"] = result.screenshot
+        # Clear old elements - will be re-detected in next iteration
+        updates["detected_elements"] = []
 
     if result.viewport is not None:
         updates["viewport"] = result.viewport

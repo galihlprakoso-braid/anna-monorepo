@@ -1,1 +1,1 @@
-"""Tests for browser_agent."""
+"""Tests for browser agent."""

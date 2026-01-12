@@ -49,7 +49,7 @@ def model_node(state: AgentState) -> dict:
 
     This node:
     1. Takes the current conversation messages
-    2. Adds the system prompt
+    2. Adds the system prompt (with detected elements if available)
     3. Invokes the model to get a response
     4. Returns the response (which may include tool calls)
 
@@ -61,8 +61,22 @@ def model_node(state: AgentState) -> dict:
     """
     messages = state.messages
 
-    # Create system message with the browser automation prompt
-    system_message = SystemMessage(content=get_system_prompt())
+    # Build system prompt with detected elements
+    base_prompt = get_system_prompt()
+
+    # Add detected elements context if available
+    elements_context = ""
+    if state.detected_elements:
+        from agents.browser_agent.services.element_detector import (
+            format_elements_for_prompt,
+        )
+
+        elements_context = "\n\n" + format_elements_for_prompt(state.detected_elements)
+
+    full_prompt = base_prompt + elements_context
+
+    # Create system message with enriched prompt
+    system_message = SystemMessage(content=full_prompt)
 
     # Get model instance and invoke with system message + conversation messages
     model = get_model()

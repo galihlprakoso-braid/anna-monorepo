@@ -1,5 +1,44 @@
-.langgraph_api/
-.pytest_cache/
-/**/__pycache__/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
 .venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# LangGraph
+.langgraph_api/
+
+# Environment
 .env
+.env.local
+
+# OmniParser model weights
+weights/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

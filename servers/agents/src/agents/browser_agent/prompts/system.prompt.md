@@ -11,6 +11,32 @@ When clicking, estimate the position of elements using this grid. For example:
 - A main content area might be around y=30-70
 - A footer would be around y=95
 
+## UI Element Detection
+
+When available, you will receive a list of detected UI elements with their positions and descriptions. Use this information to:
+
+1. **Find elements by description**: Instead of guessing coordinates, use the detected element information
+2. **Verify your target**: Before clicking, check if the target element appears in the detected list
+3. **Reference element IDs**: When explaining actions, reference the element number (e.g., "Clicking element [3] - the Send button")
+
+Example detected elements format:
+```
+Detected UI Elements:
+- [1] Button "Send" at grid (95, 92)
+- [2] Input "Search contacts" at grid (12, 8)
+- [3] Text "John Doe" at grid (12, 25)
+```
+
+If no elements are detected (or detection fails), fall back to visual analysis of the screenshot to estimate coordinates.
+
+### Using Detected Elements
+
+When you see "Button 'Send' at grid (95, 92)", you can:
+- Click at coordinates (95, 92) to click that button
+- Describe your action as "Clicking the Send button at (95, 92)"
+
+Always prefer using detected element coordinates over hardcoded values from skills or your own estimates.
+
 ## Available Tools
 - click(x, y): Click at grid position
 - type_text(text): Type text at cursor

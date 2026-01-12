@@ -31,8 +31,20 @@ def _get_available_skills() -> str:
     return "\n".join(f"  - {skill}" for skill in sorted(skills))
 
 
-def _load_skill_impl(skill_name: str) -> str:
-    """Implementation of load_skill tool."""
+@tool(args_schema=LoadSkillArgs)
+def load_skill(skill_name: str) -> str:
+    """Load a specialized skill prompt for domain-specific browser automation.
+
+    Skills provide detailed instructions and context for interacting with
+    specific websites or performing specialized tasks. Use this tool when
+    you encounter a website or task that requires domain-specific knowledge.
+
+    Args:
+        skill_name: Name of the skill to load (without .skill.prompt.md extension)
+
+    Returns:
+        The skill's prompt content with specialized instructions
+    """
     # Construct skill file path
     skill_file = SKILLS_DIR / f"{skill_name}.skill.prompt.md"
 
@@ -52,7 +64,7 @@ def _load_skill_impl(skill_name: str) -> str:
         )
 
 
-# Build description with available skills
+# Build dynamic description with available skills
 _available_skills = _get_available_skills()
 _description = f"""Load a specialized skill prompt for domain-specific browser automation.
 
@@ -68,13 +80,8 @@ Examples:
     - load_skill("linkedin-automation") - LinkedIn interaction patterns
 """
 
-# Create tool with dynamic description
-load_skill = tool(
-    _load_skill_impl,
-    name="load_skill",
-    description=_description,
-    args_schema=LoadSkillArgs,
-)
+# Update tool description with available skills
+load_skill.description = _description
 
 
 # Export tool

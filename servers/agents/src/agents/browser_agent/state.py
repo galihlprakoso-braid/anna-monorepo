@@ -23,6 +23,35 @@ class Viewport:
 
 
 @dataclass(frozen=True)
+class BoundingBox:
+    """Pixel bounding box for detected element."""
+
+    x_min: int
+    y_min: int
+    x_max: int
+    y_max: int
+
+
+@dataclass(frozen=True)
+class GridCoords:
+    """0-100 grid coordinates."""
+
+    x: int
+    y: int
+
+
+@dataclass(frozen=True)
+class DetectedElement:
+    """A detected UI element with position and description."""
+
+    element_type: str
+    caption: str
+    bbox: BoundingBox
+    grid_center: GridCoords
+    confidence: float
+
+
+@dataclass(frozen=True)
 class BrowserToolCall:
     """Tool call that will be sent to client via interrupt.
 
@@ -59,3 +88,4 @@ class AgentState:
     messages: Annotated[list[BaseMessage], add_messages] = field(default_factory=list)
     current_screenshot: str | None = None  # Latest screenshot (base64)
     viewport: Viewport | None = None  # Current viewport dimensions
+    detected_elements: list[DetectedElement] = field(default_factory=list)  # Detected UI elements

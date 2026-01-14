@@ -14,7 +14,8 @@
       "Bash(.venv/bin/alembic upgrade head)",
       "Bash(pnpm type-check:*)",
       "Bash(brew list:*)",
-      "Bash(docker:*)"
+      "Bash(docker:*)",
+      "Bash(uv run pytest:*)"
     ]
   }
 }

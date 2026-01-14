@@ -43,7 +43,10 @@ def get_model():
     """
     global _model
     if _model is None:
-        _model = ChatOpenAI(model="gpt-5-mini").bind_tools(browser_tools)
+        _model = ChatOpenAI(
+            model="gpt-5-mini",
+            temperature=0,
+        ).bind_tools(browser_tools)
     return _model
 
 

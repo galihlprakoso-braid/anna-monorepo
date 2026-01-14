@@ -175,7 +175,17 @@ class TestRealWorldWhatsAppFlow:
     @pytest.fixture
     def whatsapp_instruction(self) -> str:
         """The instruction sent from Chrome extension."""
-        return "Collect messages from WhatsApp Web. Open the top 5 chats and collect messages."
+        return (
+            "Collect the last 20 messages from each of the last 10 chats on WhatsApp Web. "
+            "Format the data as: contact/group name → messages → each message with datetime. "
+            "IMPORTANT workflow: "
+            "(1) When you open a chat, collect the VISIBLE messages FIRST with collect_data, "
+            "(2) THEN scroll up to load older messages, "
+            "(3) Collect again with collect_data (this is progressive collection), "
+            "(4) Repeat scrolling and collecting until you have approximately 20 messages total, "
+            "(5) After finishing one chat, move to the next chat and repeat. "
+            "The collect_data tool does NOT end the task - you will call it many times throughout this process."
+        )
 
     @pytest.fixture
     def initial_screenshot(self) -> str:
@@ -328,7 +338,7 @@ class TestRealWorldWhatsAppFlow:
             f"The screenshot shows a loading screen, so agent should wait."
         )
 
-    def test_agent_decide_to_get_current_screenshot_by_calling_screenshot_tool(
+    def test_agent_decide_to_click_first_chat(
         self,
         whatsapp_instruction: str,
         initial_screenshot: str
@@ -463,5 +473,116 @@ class TestRealWorldWhatsAppFlow:
         whatsapp_instruction: str,
         initial_screenshot: str
     ):
-       
-        pass
+        """
+        Test that agent calls collect_data after opening a chat and seeing messages.
+
+        Flow:
+        1. Agent loaded skill
+        2. Agent saw loading screen, called wait
+        3. Agent called screenshot, saw chat list, called click
+        4. NOW: Chat is open with messages visible (ss-4.png)
+        5. Agent should call collect_data to collect visible messages
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Load the chat view screenshot (ss-4.png) - messages visible
+        chat_view_screenshot_path = IMAGES_DIR / "ss-4.png"
+        assert chat_view_screenshot_path.exists(), f"Test image not found: {chat_view_screenshot_path}"
+        chat_view_screenshot = load_image_as_data_url(chat_view_screenshot_path)
+
+        # Build conversation history - simulating the flow up to opening chat
+        messages = [
+            # 1. Initial request with loading screenshot
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            # 2. Agent loaded skill
+            AIMessage(
+                content="I will load the WhatsApp Web skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # 3. Agent saw loading screen, called wait
+            AIMessage(
+                content="Page is loading, I will wait.",
+                tool_calls=[{"id": "call_2", "name": "wait", "args": {"ms": 3000}}],
+            ),
+            ToolMessage(content="Waited 3000ms", tool_call_id="call_2"),
+            # 4. Agent called screenshot to check state
+            AIMessage(
+                content="Let me check if page has loaded.",
+                tool_calls=[{"id": "call_3", "name": "screenshot", "args": {"reason": "Check if page loaded"}}],
+            ),
+            ToolMessage(content="Screenshot requested: Check if page loaded", tool_call_id="call_3"),
+            # 5. Agent saw chat list, clicked first chat
+            AIMessage(
+                content="I see the chat list. I will click the first chat.",
+                tool_calls=[{"id": "call_4", "name": "click", "args": {"x": 10, "y": 30}}],
+            ),
+            ToolMessage(content="Clicked at grid position (10, 30)", tool_call_id="call_4"),
+            # 6. Agent should wait briefly for chat to load
+            AIMessage(
+                content="Waiting for chat to load.",
+                tool_calls=[{"id": "call_5", "name": "wait", "args": {"ms": 1000}}],
+            ),
+            ToolMessage(content="Waited 1000ms", tool_call_id="call_5"),
+        ]
+
+        # Create state with chat view screenshot (messages visible)
+        state = AgentState(
+            messages=messages,
+            current_screenshot=chat_view_screenshot,  # ss-4.png with messages
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        # Run element detection on chat view
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+
+        print("\n" + "="*70)
+        print("DEBUG: Running element_detection_node on chat view screenshot")
+        print("="*70)
+
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        print(f"Detected {len(state.detected_elements)} elements in chat view")
+        for i, elem in enumerate(state.detected_elements[:10]):
+            print(f"  [{i+1}] {elem.element_type} '{elem.caption}' at grid ({elem.grid_center.x:.1f}, {elem.grid_center.y:.1f})")
+        print("="*70)
+
+        # Call model_node to get agent's decision
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        tool_names = [tc["name"] for tc in ai_message.tool_calls] if ai_message.tool_calls else []
+
+        print("\n" + "="*70)
+        print("AGENT RESPONSE AFTER SEEING MESSAGES:")
+        print("="*70)
+        print(f"Text: {ai_message.content}")
+        print(f"Tools called: {tool_names}")
+        if ai_message.tool_calls:
+            for tc in ai_message.tool_calls:
+                print(f"  - {tc['name']}({tc.get('args', {})})")
+        print("="*70)
+
+        # Assertion: Agent should call collect_data when seeing messages in open chat
+        assert "collect_data" in tool_names, (
+            f"Agent should call collect_data when seeing messages in open chat.\n"
+            f"Instead called: {tool_names}\n"
+            f"The screenshot shows PAKE WA chat open with multiple messages visible."
+        )
+
+    

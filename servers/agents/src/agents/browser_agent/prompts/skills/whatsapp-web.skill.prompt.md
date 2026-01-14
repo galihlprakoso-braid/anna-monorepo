@@ -1,54 +1,122 @@
 # WhatsApp Web Skill
 
-## Page State Detection (Check First!)
+Generic knowledge for interacting with WhatsApp Web interface.
 
-Look at the screenshot and identify the current state:
+---
 
-### State 1: LOADING
-**What you see:**
+## Page States
+
+WhatsApp Web has different states you may encounter:
+
+### State: LOADING
+**Visual indicators:**
 - Centered WhatsApp logo (green circle with phone icon)
-- Text "End-to-end encrypted" below it
+- Text "End-to-end encrypted" below logo
 - NO chat list visible
-- Blank background
+- Blank/white background
 
-**Action:** `wait(3000)` → `screenshot()` (max 3 times total)
-
----
-
-### State 2: LOADED (Chat List Visible)
-**What you see:**
-- Left sidebar with chat list
-- Contact/group names visible (AHMAD SOMPRET, PAKE WA, etc.)
-- Search bar at top
-- Profile pictures next to names
-- Timestamps visible
-- **Note:** Green notification banners like "Turn on background sync" mean page IS loaded!
-
-**Action:** Proceed to collect messages
+**How to handle:** Wait for page to load, then take screenshot to check state
 
 ---
 
-### State 3: QR CODE / Login
-**What you see:**
-- QR code in center
-- "Scan to log in" or "Link with phone" text
+### State: LOADED (Chat List View)
+**Visual indicators:**
+- Left sidebar with chat list (vertical list of conversations)
+- Contact/group names visible in list
+- Search bar at top of sidebar
+- Profile pictures next to contact names
+- Timestamps on the right of each chat item
+- **Note:** Green notification banners (e.g., "Turn on background sync") mean page IS loaded!
 
-**Action:** `collect_data(["error: WhatsApp Web requires QR code authentication"])`
+**UI Layout:**
+- **Chat list**: Vertical list in left sidebar
+  - Each chat item shows: profile picture, contact/group name, last message preview, timestamp
+  - Chats are ordered by most recent activity
+- **Search bar**: Located at top of left sidebar
+- **Menu button**: Top-left corner (three dots icon)
+
+**How to interact:**
+- Click on chat items to open conversations
+- Use search bar to find specific chats
+- Scroll up/down in chat list to see more conversations
 
 ---
 
-## Message Collection (When LOADED)
+### State: CHAT VIEW (Conversation Open)
+**Visual indicators:**
+- Right side (or full screen on mobile) shows message thread
+- Chat header at top with contact/group name and info
+- Message bubbles (typically green for sent, white for received)
+- Text input field at bottom
+- Back arrow or chat list visible on left side
 
-1. **Click first chat** in left sidebar (around x=10, y=25)
-2. **Wait 500ms** for chat to open
-3. **Read messages** from screenshot (sender, text, time)
-4. **Go back** to chat list (click left sidebar x=7, y=10)
-5. **Repeat** for top 5 chats
-6. **Submit data** with `collect_data([message strings])`
+**UI Layout:**
+- **Chat header**: Top of conversation, shows contact/group name, profile picture, status
+- **Message area**: Center/right area showing conversation history
+  - Sent messages: Usually on right side, green background
+  - Received messages: Usually on left side, white/gray background
+  - Each message shows: sender name (in groups), message text, timestamp
+- **Back button**: Arrow or chat list area to return to chat list
+- **Message input**: Bottom of screen for typing new messages
+- **Scroll area**: Scroll up to load older messages
 
-## Important
+**How to interact:**
+- Click back arrow or left sidebar area to return to chat list
+- Scroll up to load older messages
+- Read visible messages from screenshot (sender, text, timestamp)
+- Click on message input to type (if needed)
+- Send messages using send button
 
-- **DON'T** confuse notification banners with loading screens
-- **DO** count visible chat items - if you see 5+ chat names, page is loaded
-- **DON'T** wait more than 3 times on loading screen
-- **DO** click and interact if you see the chat list
+---
+
+### State: QR CODE / Login Required
+**Visual indicators:**
+- QR code displayed in center of screen
+- Text like "Scan to log in", "Link with phone", or "Use WhatsApp on your phone to scan this code"
+- No chat list or messages visible
+
+**How to handle:** This state requires manual user authentication with phone
+
+---
+
+## Common Interaction Patterns
+
+### Opening a chat:
+1. Ensure you're in LOADED state (chat list visible)
+2. Identify and click on desired chat item in left sidebar
+3. Wait briefly (1-5s) for chat to load
+4. Take screenshot to verify messages are visible
+
+### Reading messages:
+1. Open the chat (see above)
+2. Look at message bubbles in conversation area
+3. Extract information: sender name, message text, timestamp
+4. Scroll up if you need to see older messages
+5. Scroll down to see newer messages
+
+### Returning to chat list:
+1. Click back arrow or left sidebar area
+2. Wait briefly for transition
+3. Take screenshot to confirm you're back at chat list
+
+### Searching for a chat:
+1. Click search bar at top of sidebar
+2. Type search query
+3. Wait for results to filter
+4. Click on desired chat from filtered results
+
+### Scrolling through messages:
+1. To see older messages: Scroll up in conversation area
+2. To see newer messages: Scroll down in conversation area
+3. Messages load dynamically as you scroll
+
+---
+
+## Important Notes
+
+- **Notification banners** (green bars at top) do NOT mean page is loading - they appear on loaded pages
+- **Chat list visibility** is the key indicator that page is ready to interact with
+- **Wait times**: Allow 300-500ms after clicks for UI transitions to complete
+- **Message format**: Messages typically include sender name (in groups), text content, and timestamp
+- **Visual confirmation**: Always take screenshots after actions to verify state changes
+- **Screen variations**: UI layout may vary slightly based on screen size, but general structure remains consistent

@@ -20,16 +20,36 @@ You are now specialized in automating WhatsApp Web (web.whatsapp.com). This skil
 
 ### Element Identification
 
-Use the detected UI elements to find:
+**Visual Recognition (from screenshot):**
+Look at the screenshot image to identify these elements visually:
+- **Search bar**: Text input at top of left sidebar (may say "Ask Meta AI" or "Search")
+- **Message input**: Text input at bottom of chat area (may say "Type a message")
+- **Send button**: Icon/button to the right of message input
+- **Chat list items**: Profile pictures with contact names in left sidebar
+- **Notification banners**: Yellow/green banners with dismiss buttons
 
-- **Search bar**: Look for Input element with caption containing "Search", "Ask Meta AI", or similar, typically in the left sidebar
-- **Message input**: Look for Input element near the bottom of the chat view, caption may include "Type a message" or similar
-- **Send button**: Look for Button element with send icon or caption, positioned to the right of the message input
-- **Chat list items**: Text elements in the left sidebar showing contact names and recent messages
-- **New chat button**: Button or Icon in the top-left area of the left sidebar
-- **Attach button**: Button or Icon near the message input (usually left of input)
+**Using Detected Elements for Coordinates:**
+Once you visually identify WHAT you want to click, use detected elements to find WHERE to click:
+- **Left sidebar elements**: Typically at x=0-25
+- **Center/chat area elements**: Typically at x=30-70
+- **Right side elements**: Typically at x=75-100
+- **Top of screen**: y=0-20
+- **Bottom of screen**: y=80-100
+
+**Note**: Element captions may be generic ("UI element"). Match the element's grid position to what you see in the screenshot to determine which element to click.
 
 ## Interaction Patterns
+
+### Before Any Action - Check Page State (Use Screenshot Image)
+**IMPORTANT: Look at the SCREENSHOT to determine page state, NOT the detected elements.**
+
+**Visually identify in the screenshot:**
+- **Loading screen**: Centered WhatsApp logo, "End-to-end encrypted" text, no chat list visible
+- **QR code screen**: Large QR code in center, instructions to scan with phone
+- **Fully loaded interface**: Left sidebar with chat list visible, contact names/avatars shown
+
+**If loading/QR screen**: Use `wait` for 3000-5000ms, then `screenshot` again
+**If fully loaded**: Proceed with your task!
 
 ### Sending a Message
 1. **Find/search contact**:
@@ -59,8 +79,54 @@ Use the detected UI elements to find:
    - Type to filter chat list
    - If needed, scroll the chat list area using scroll(direction="down")
 
+### Collecting Messages from Multiple Chats
+**For data collection tasks** ("collect messages", "get WhatsApp data"):
+
+1. **Visually verify interface is loaded** (look at screenshot: can you see chat list on left?)
+2. **Look at the screenshot to identify chat items**: You'll see contact names, profile pictures, and message previews in the left sidebar
+3. **Find coordinates for clicking**:
+   - The left sidebar is typically at x=0-25 in the grid
+   - Use detected elements in that region to get accurate click coordinates
+   - Look at the screenshot to decide WHICH chat to click, use detected elements for WHERE to click
+4. **Click a chat**: Use coordinates from detected elements in left sidebar area
+5. **Wait for chat to load**: Use `wait` for 700-1000ms
+6. **Take screenshot**: See the chat messages
+7. **Read messages from screenshot**: Look at the message content, sender names, timestamps in the image
+8. **Collect data**: Use `collect_data` tool with what you READ from the screenshot
+9. **Click next chat**: Go back to left sidebar, click another chat
+10. **Repeat** until sufficient data collected
+
+**Key principle**: Look at screenshot to UNDERSTAND and DECIDE, use detected elements to CLICK accurately.
+
+### Initial Page Load & State Detection
+
+**CRITICAL: Use the SCREENSHOT IMAGE to determine page state**
+
+Look at the screenshot and visually identify:
+
+#### Loading Screen (NOT ready):
+- **What you see in screenshot**: WhatsApp logo centered, "End-to-end encrypted" text, possibly a progress indicator
+- **Visual appearance**: Mostly empty screen with just the logo
+- **Action**: Use `wait` for 3000-5000ms, then `screenshot` again
+
+#### QR Code Screen (NOT ready):
+- **What you see in screenshot**: Large QR code in center, instructions to scan with WhatsApp mobile app
+- **Visual appearance**: QR code is prominent, no chat list visible
+- **Action**: Inform user they need to scan the QR code to log in
+
+#### Fully Loaded Interface (READY):
+- **What you see in screenshot**: Left sidebar with chat list (contact names, profile pictures, message previews), main chat area on right
+- **Visual appearance**: Two-column layout with visible conversations on the left
+- **Note**: Even if right side shows "Download WhatsApp for Mac", if you SEE the chat list on the left, you're ready!
+- **Action**: Proceed with your task!
+
+#### Using Detected Elements for Clicking:
+Once you've visually confirmed the interface is loaded, use the detected elements to find accurate coordinates:
+- Elements at x=0-25 are in the left sidebar (chat list area)
+- Match what you SEE in the screenshot to element coordinates for accurate clicking
+
 ### Handling Pop-ups
-- **QR Code screen**: If you see QR code, inform user they need to scan it manually
+- **QR Code screen**: If you see QR code after the page loads, inform user they need to scan it manually to log in
 - **Permission prompts**: Click "Allow" if appropriate (typically center screen)
 - **Update notifications**: Click "Dismiss" or close button (top-right of modal)
 

@@ -4,6 +4,7 @@ This node invokes the LLM to decide what action to take based on
 the current state (messages, screenshot).
 """
 
+import logging
 from pathlib import Path
 
 from langchain_core.messages import SystemMessage
@@ -12,6 +13,8 @@ from langchain_openai import ChatOpenAI
 from agents.browser_agent.state import AgentState
 from agents.browser_agent.tools.browser_tools import browser_tools
 from agents.shared.prompt_loader import load_prompt
+
+logger = logging.getLogger(__name__)
 
 # Path to system prompt (relative to this file)
 SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "system.prompt.md"
@@ -72,14 +75,27 @@ def model_node(state: AgentState) -> dict:
         )
 
         elements_context = "\n\n" + format_elements_for_prompt(state.detected_elements)
+        logger.info(f"Detected elements context:\n{elements_context}")
+    else:
+        logger.info("No detected elements available")
 
     full_prompt = base_prompt + elements_context
 
     # Create system message with enriched prompt
     system_message = SystemMessage(content=full_prompt)
 
+    # Log message count
+    logger.info(f"Invoking model with {len(messages)} messages")
+
     # Get model instance and invoke with system message + conversation messages
     model = get_model()
     response = model.invoke([system_message] + list(messages))
+
+    # Log response details
+    if response.tool_calls:
+        logger.info(f"Model returned {len(response.tool_calls)} tool call(s): {[tc['name'] for tc in response.tool_calls]}")
+    else:
+        content_preview = str(response.content)[:200] if response.content else "(empty)"
+        logger.info(f"Model returned text response: {content_preview}...")
 
     return {"messages": [response]}

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient, UseMutationResult } from '@tanstack/react-query';
-import { Task, TaskCreate, TaskUpdate, TaskStatus, TaskPriority } from './types';
-import { apiClient } from '../client';
-import { taskKeys } from './queries';
+import { Task, TaskCreate, TaskUpdate, TaskStatus, TaskPriority } from './types.js';
+import { apiClient } from '../client.js';
+import { taskKeys } from './queries.js';
 
 // Create task
 interface CreateTaskParams {

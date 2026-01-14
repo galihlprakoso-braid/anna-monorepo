@@ -45,11 +45,19 @@ def element_detection_node(state: AgentState) -> dict:
         detect_elements_from_screenshot,
     )
 
+    # Handle viewport - can be dict (from client input) or Viewport dataclass
+    if isinstance(state.viewport, dict):
+        viewport_width = state.viewport["width"]
+        viewport_height = state.viewport["height"]
+    else:
+        viewport_width = state.viewport.width
+        viewport_height = state.viewport.height
+
     # Detect elements (returns empty list on failure)
     elements = detect_elements_from_screenshot(
         screenshot_base64=state.current_screenshot,
-        viewport_width=state.viewport.width,
-        viewport_height=state.viewport.height,
+        viewport_width=viewport_width,
+        viewport_height=viewport_height,
     )
 
     return {"detected_elements": elements}

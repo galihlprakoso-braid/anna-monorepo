@@ -58,3 +58,11 @@ class LoadSkillArgs(BaseModel):
     skill_name: str = Field(
         description="Name of the skill to load (e.g., 'whatsapp-web', 'linkedin-automation')"
     )
+
+
+class CollectDataArgs(BaseModel):
+    """Collect and submit data from the page."""
+
+    data: list[str] = Field(
+        description="Array of strings containing unstructured information collected from the page"
+    )

@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## General Guidelines
+
+### **Never Assume Dependency Versions**
+
+**CRITICAL**: When proposing code that uses external dependencies, NEVER assume or hardcode version numbers. Always:
+1. Check the actual installed version in `package.json` or `pyproject.toml` first
+2. Use the version-appropriate API based on what's actually installed
+3. When unsure, consult the repository's documentation in `docs/` directory
+4. If proposing new dependencies, recommend installation without specifying versions (e.g., `pnpm add <package>` or `uv add <package>`)
+
+Assuming outdated versions leads to incorrect API usage and broken implementations.
+
 ## Project Overview
 
 ANNA is an AI assistant app that helps busy parents manage tasks related to their kids (school, education, health, etc.). The codebase consists of:
@@ -128,6 +140,110 @@ uv sync                    # Install all dependencies
 ```
 
 **IMPORTANT**: Never manually write version numbers in pyproject.toml. Always use `uv add` commands to install packages - this ensures you get the latest compatible versions and properly manages the lockfile.
+
+## Debugging LangGraph Agents
+
+### Fetching Traces from LangSmith
+
+When debugging browser agent or other LangGraph agents, you can fetch full trace data from LangSmith to understand what the model is seeing and deciding.
+
+**Script Location**: `servers/agents/scripts/fetch_trace.py`
+
+#### Prerequisites
+
+```bash
+# Ensure langsmith is installed (it should be in pyproject.toml already)
+cd servers/agents
+uv sync
+
+# Set up environment variables (already in servers/agents/.env)
+export LANGSMITH_API_KEY="lsv2_..."  # Your API key
+export LANGSMITH_PROJECT="anna-v3"   # Your project name
+```
+
+#### Usage
+
+**Fetch a specific trace by ID:**
+
+From a LangSmith trace URL like:
+```
+https://smith.langchain.com/o/.../projects/p/...?peek=019bbb3d-53f3-7c90-be38-81cee3e18cfd
+```
+
+Extract the trace ID (the last part after `peek=`) and run:
+
+```bash
+cd servers/agents
+python scripts/fetch_trace.py --trace-id 019bbb3d-53f3-7c90-be38-81cee3e18cfd
+```
+
+**Fetch the latest trace:**
+
+```bash
+python scripts/fetch_trace.py --latest
+```
+
+**Fetch from a specific project:**
+
+```bash
+python scripts/fetch_trace.py --latest --project-name "browser_agent"
+```
+
+**Output to stdout (for piping to other tools):**
+
+```bash
+python scripts/fetch_trace.py --trace-id <id> --stdout | jq '.outputs.messages[-1].content'
+```
+
+#### Output
+
+By default, traces are saved to `servers/agents/tmp/traces/` with a filename like:
+```
+trace_<trace-id>_<timestamp>.json
+```
+
+The saved JSON includes:
+- Full conversation history with all messages
+- Complete tool calls and arguments
+- Model responses (not truncated)
+- Screenshots (base64-encoded images)
+- Metadata (timing, costs, etc.)
+
+#### Analyzing Traces
+
+```bash
+# View the trace with syntax highlighting
+cat tmp/traces/trace_*.json | python -m json.tool | less
+
+# Extract specific information with jq
+cat tmp/traces/trace_*.json | jq '.outputs.messages[] | select(.role=="assistant")'
+
+# View just the latest assistant response
+cat tmp/traces/trace_*.json | jq '.outputs.messages[-1].content'
+```
+
+#### Debugging Workflow
+
+1. **Run the agent** (e.g., trigger browser agent data collection from Chrome extension)
+2. **Get the trace URL** from LangSmith UI or copy the trace ID from logs
+3. **Fetch the full trace**:
+   ```bash
+   cd servers/agents
+   python scripts/fetch_trace.py --trace-id <id>
+   ```
+4. **Analyze the trace** to understand:
+   - What screenshots/context the model received
+   - What tools it decided to call (or not call)
+   - What reasoning it provided
+   - Where it stopped and why
+5. **Iterate on prompts/skills** based on findings
+6. **Test again** with a new run
+
+#### Common Issues
+
+- **"LANGSMITH_API_KEY not found"**: Make sure you're running from `servers/agents/` directory where `.env` is located, or export the variable
+- **"No traces found"**: Check the project name matches your LangSmith project
+- **Truncated images in JSON**: The script preserves full base64-encoded images - they may be very long but are complete
 
 ## Architecture
 

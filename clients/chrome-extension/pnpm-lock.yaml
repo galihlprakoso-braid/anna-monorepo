@@ -141,6 +141,9 @@ importers:
 
   chrome-extension:
     dependencies:
+      '@extension/api':
+        specifier: workspace:*
+        version: link:../packages/api
       '@extension/env':
         specifier: workspace:*
         version: link:../packages/env
@@ -150,6 +153,9 @@ importers:
       '@extension/storage':
         specifier: workspace:*
         version: link:../packages/storage
+      '@langchain/langgraph-sdk':
+        specifier: ^1.5.2
+        version: 1.5.2(@langchain/core@1.1.12(openai@6.16.0(ws@8.18.3)(zod@4.3.5)))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       webextension-polyfill:
         specifier: ^0.12.0
         version: 0.12.0
@@ -184,6 +190,16 @@ importers:
       zod:
         specifier: ^4.3.5
         version: 4.3.5
+    devDependencies:
+      '@extension/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+
+  packages/api:
+    dependencies:
+      '@tanstack/react-query':
+        specifier: ^5.0.0
+        version: 5.90.16(react@19.1.1)
     devDependencies:
       '@extension/tsconfig':
         specifier: workspace:*
@@ -438,6 +454,9 @@ importers:
       '@extension/agents':
         specifier: workspace:*
         version: link:../../packages/agents
+      '@extension/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@extension/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
@@ -450,6 +469,9 @@ importers:
       '@extension/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@tanstack/react-query':
+        specifier: ^5.0.0
+        version: 5.90.16(react@19.1.1)
     devDependencies:
       '@extension/tailwindcss-config':
         specifier: workspace:*
@@ -1313,6 +1335,14 @@ packages:
 
   '@swc/types@0.1.25':
     resolution: {integrity: sha512-iAoY/qRhNH8a/hBvm3zKj9qQ4oc2+3w1unPJa2XvTK3XjeLXtzcCingVPw/9e5mn1+0yPqxcBGp9Jf0pkfMb1g==}
+
+  '@tanstack/query-core@5.90.16':
+    resolution: {integrity: sha512-MvtWckSVufs/ja463/K4PyJeqT+HMlJWtw6PrCpywznd2NSgO3m4KwO9RqbFqGg6iDE8vVMFWMeQI4Io3eEYww==}
+
+  '@tanstack/react-query@5.90.16':
+    resolution: {integrity: sha512-bpMGOmV4OPmif7TNMteU/Ehf/hoC0Kf98PDc0F4BZkFrEapRMEqI/V6YS0lyzwSV6PQpY1y4xxArUIfBW5LVxQ==}
+    peerDependencies:
+      react: ^18 || ^19
 
   '@tootallnate/quickjs-emscripten@0.23.0':
     resolution: {integrity: sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA==}
@@ -5763,6 +5793,13 @@ snapshots:
   '@swc/types@0.1.25':
     dependencies:
       '@swc/counter': 0.1.3
+
+  '@tanstack/query-core@5.90.16': {}
+
+  '@tanstack/react-query@5.90.16(react@19.1.1)':
+    dependencies:
+      '@tanstack/query-core': 5.90.16
+      react: 19.1.1
 
   '@tootallnate/quickjs-emscripten@0.23.0': {}
 

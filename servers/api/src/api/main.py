@@ -1,17 +1,26 @@
+# Load environment variables FIRST, before any other imports
+from dotenv import load_dotenv
+load_dotenv()
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.core.config import get_settings
-from data.core.database import init_db
+from data.core.database import init_db, close_db
 from api.task.router import router as task_router
+from api.datasource.router import router as datasource_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize on startup."""
-    print("Initializing database...")
-    init_db()
-    print("Database ready!")
+    """Initialize on startup, cleanup on shutdown."""
+    print("Initializing MongoDB connection...")
+    await init_db()
+    print("MongoDB ready!")
     yield
+    print("Closing MongoDB connection...")
+    await close_db()
+
 
 app = FastAPI(
     title="ANNA Task API",
@@ -43,10 +52,13 @@ else:
 
 # Routes
 app.include_router(task_router, prefix="/api/v1")
+app.include_router(datasource_router, prefix="/api/v1")
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
 
 if __name__ == "__main__":
     import uvicorn

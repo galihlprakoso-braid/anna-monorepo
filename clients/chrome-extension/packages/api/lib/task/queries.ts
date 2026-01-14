@@ -1,6 +1,6 @@
 import { useQuery, UseQueryResult } from '@tanstack/react-query';
-import { Task, TaskListResponse } from './types';
-import { apiClient } from '../client';
+import { Task, TaskListResponse } from './types.js';
+import { apiClient } from '../client.js';
 
 // Query keys
 export const taskKeys = {

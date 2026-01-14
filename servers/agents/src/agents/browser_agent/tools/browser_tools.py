@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 
 from agents.browser_agent.models import (
     ClickArgs,
+    CollectDataArgs,
     DragArgs,
     ScreenshotArgs,
     ScrollArgs,
@@ -86,5 +87,42 @@ def screenshot(reason: str = "") -> str:
     return f"Screenshot requested: {reason}" if reason else "Screenshot requested"
 
 
+@tool(args_schema=CollectDataArgs)
+def collect_data(data: list[str]) -> str:
+    """Collect and submit unstructured data from the current page.
+
+    Use this tool when you've extracted information from the page and want to
+    submit it for storage/processing. The data should be an array of strings,
+    where each string contains one piece of information.
+
+    Args:
+        data: Array of strings containing unstructured information
+
+    Returns:
+        Success message confirming data was collected
+
+    Example:
+        collect_data(
+            data=[
+                "John: Hi there (10:30 AM)",
+                "Jane: Hello! (10:31 AM)",
+                "Mike: How are you? (10:32 AM)"
+            ]
+        )
+    """
+    # Dummy implementation - just return success
+    # Future: Call ingestion pipeline endpoint
+    item_count = len(data)
+    return f"Successfully collected {item_count} items. Data submitted for processing."
+
+
 # Export all browser tools as a list for binding to the model
-browser_tools = [click, type_text, scroll, drag, wait, screenshot] + skill_tools
+browser_tools = [
+    click,
+    type_text,
+    scroll,
+    drag,
+    wait,
+    screenshot,
+    collect_data,
+] + skill_tools

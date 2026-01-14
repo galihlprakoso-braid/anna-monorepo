@@ -1,14 +1,15 @@
 [project]
 name = "data"
 version = "0.1.0"
-description = "Shared data layer for ANNA (database models and migrations)"
+description = "Shared data layer for ANNA (MongoDB with Beanie ODM)"
 authors = [
     { name = "Galih Laras Prakoso", email = "galih@braidapp.ai" }
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "alembic>=1.18.0",
-    "sqlalchemy>=2.0.45",
+    "beanie>=1.29.0",
+    "motor>=3.7.0",
+    "pydantic>=2.12.0",
 ]
 
 [build-system]

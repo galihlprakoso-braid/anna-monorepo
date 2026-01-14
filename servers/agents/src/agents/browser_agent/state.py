@@ -11,7 +11,9 @@ from langgraph.graph.message import add_messages
 
 
 # Browser action types
-BrowserAction = Literal["click", "type", "scroll", "drag", "wait", "screenshot"]
+BrowserAction = Literal[
+    "click", "type", "scroll", "drag", "wait", "screenshot", "collect_data"
+]
 
 
 @dataclass(frozen=True)

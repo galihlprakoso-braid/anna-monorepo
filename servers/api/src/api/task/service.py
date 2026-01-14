@@ -1,116 +1,145 @@
-from sqlalchemy import select, func
-from sqlalchemy.orm import Session, selectinload
-from data.models.task import TaskModel
+"""Service layer for Task business logic using MongoDB/Beanie."""
+
+from datetime import datetime, UTC
+from beanie import PydanticObjectId
+from data.models.task import TaskDocument, TaskStatus
 from api.core.exceptions import NotFoundError, ValidationError
 from api.task.schemas import TaskCreate, TaskUpdate
-from api.task.mapper import TaskMapper
+
 
 class TaskService:
     """Business logic for task operations."""
 
-    def __init__(self, db: Session, user_id: str):
-        self.db = db
+    def __init__(self, user_id: str):
         self.user_id = user_id
 
-    def create_task(self, schema: TaskCreate) -> TaskModel:
+    async def create_task(self, schema: TaskCreate) -> TaskDocument:
         """Create a new task."""
         # Validate parent exists
         if schema.parent_task_id:
-            parent = self.db.get(TaskModel, schema.parent_task_id)
-            if not parent:
+            parent = await TaskDocument.get(PydanticObjectId(schema.parent_task_id))
+            if not parent or parent.owner_user_id != self.user_id:
                 raise ValidationError(f"Parent task {schema.parent_task_id} not found")
 
-        # Convert schema to model
-        db_task = TaskMapper.from_create(schema, self.user_id)
+        # Create document
+        task = TaskDocument(
+            title=schema.title,
+            description=schema.description,
+            status=schema.status,
+            priority=schema.priority,
+            due_date=schema.due_date,
+            scheduled_date=schema.scheduled_date,
+            parent_task_id=PydanticObjectId(schema.parent_task_id) if schema.parent_task_id else None,
+            assignees=schema.assignees,
+            recurrence_config=schema.recurrence_config,
+            tags=schema.tags,
+            extra_data=schema.extra_data,
+            owner_user_id=self.user_id,
+        )
 
-        # Check for circular references
-        if schema.parent_task_id:
-            if self._would_create_cycle(schema.parent_task_id, db_task.id):
-                raise ValidationError("Circular task reference detected")
+        await task.insert()
+        return task
 
-        self.db.add(db_task)
-        self.db.commit()
-
-        # Re-fetch with subtasks loaded
-        return self.get_task(db_task.id)
-
-    def get_task(self, task_id: str) -> TaskModel:
+    async def get_task(self, task_id: str) -> TaskDocument:
         """Get task by ID."""
-        # Eagerly load subtasks relationship
-        stmt = select(TaskModel).where(TaskModel.id == task_id).options(selectinload(TaskModel.subtasks))
-        task = self.db.execute(stmt).scalar_one_or_none()
+        try:
+            task = await TaskDocument.get(PydanticObjectId(task_id))
+        except Exception:
+            raise NotFoundError(f"Task {task_id} not found")
 
         if not task or task.owner_user_id != self.user_id:
             raise NotFoundError(f"Task {task_id} not found")
         return task
 
-    def list_tasks(
+    async def list_tasks(
         self,
         parent_id: str | None = None,
         status: str | None = None,
         page: int = 1,
         page_size: int = 50,
-    ) -> tuple[list[TaskModel], int]:
+    ) -> tuple[list[TaskDocument], int]:
         """List tasks with filtering and pagination."""
-        query = select(TaskModel).where(TaskModel.owner_user_id == self.user_id)
+        # Build query
+        query = {"owner_user_id": self.user_id}
 
         # Filter by parent
         if parent_id == "root":
-            query = query.where(TaskModel.parent_task_id.is_(None))
+            query["parent_task_id"] = None
         elif parent_id:
-            query = query.where(TaskModel.parent_task_id == parent_id)
+            query["parent_task_id"] = PydanticObjectId(parent_id)
 
         # Filter by status
         if status:
-            query = query.where(TaskModel.status == status)
+            query["status"] = status
 
         # Count total
-        total = self.db.execute(select(func.count()).select_from(query.subquery())).scalar_one()
+        total = await TaskDocument.find(query).count()
 
         # Paginate
-        offset = (page - 1) * page_size
-        query = query.offset(offset).limit(page_size)
+        skip = (page - 1) * page_size
+        tasks = await TaskDocument.find(query).skip(skip).limit(page_size).to_list()
 
-        tasks = self.db.execute(query).scalars().all()
-        return list(tasks), total
+        return tasks, total
 
-    def update_task(self, task_id: str, schema: TaskUpdate) -> TaskModel:
+    async def update_task(self, task_id: str, schema: TaskUpdate) -> TaskDocument:
         """Update task."""
-        task = self.get_task(task_id)
+        task = await self.get_task(task_id)
 
-        # Validate parent change
-        if schema.parent_task_id and schema.parent_task_id != task.parent_task_id:
-            if self._would_create_cycle(schema.parent_task_id, task_id):
+        # Get update data (excluding unset fields)
+        update_data = schema.model_dump(exclude_unset=True)
+
+        # Handle parent_task_id conversion
+        if "parent_task_id" in update_data and update_data["parent_task_id"]:
+            # Validate new parent exists
+            new_parent_id = update_data["parent_task_id"]
+            parent = await TaskDocument.get(PydanticObjectId(new_parent_id))
+            if not parent or parent.owner_user_id != self.user_id:
+                raise ValidationError(f"Parent task {new_parent_id} not found")
+
+            # Check for circular reference
+            if await self._would_create_cycle(new_parent_id, task_id):
                 raise ValidationError("Circular task reference detected")
 
+            update_data["parent_task_id"] = PydanticObjectId(new_parent_id)
+        elif "parent_task_id" in update_data and update_data["parent_task_id"] is None:
+            update_data["parent_task_id"] = None
+
+        # Handle status change to completed
+        if update_data.get("status") == TaskStatus.COMPLETED and task.status != TaskStatus.COMPLETED:
+            update_data["completed_at"] = datetime.now(UTC)
+
+        # Update timestamp
+        update_data["updated_at"] = datetime.now(UTC)
+
         # Apply updates
-        TaskMapper.apply_update(task, schema)
+        for field, value in update_data.items():
+            setattr(task, field, value)
 
-        self.db.commit()
+        await task.save()
+        return task
 
-        # Re-fetch with subtasks loaded
-        return self.get_task(task_id)
-
-    def delete_task(self, task_id: str, cascade: bool = False) -> bool:
+    async def delete_task(self, task_id: str, cascade: bool = False) -> bool:
         """Delete task."""
-        task = self.get_task(task_id)
+        task = await self.get_task(task_id)
 
         if cascade:
-            # Manually delete all subtasks recursively
-            self._delete_subtasks_recursive(task)
+            # Recursively delete all subtasks
+            await self._delete_subtasks_recursive(str(task.id))
+
         else:
             # Orphan subtasks (set parent_task_id to None)
-            if task.subtasks:
-                for subtask in task.subtasks:
-                    subtask.parent_task_id = None
-                    self.db.add(subtask)
+            subtasks = await TaskDocument.find(
+                {"parent_task_id": task.id}
+            ).to_list()
+            for subtask in subtasks:
+                subtask.parent_task_id = None
+                await subtask.save()
 
         # Delete parent task
-        self.db.delete(task)
-        self.db.commit()
+        await task.delete()
         return True
 
-    def _would_create_cycle(self, parent_id: str, child_id: str) -> bool:
+    async def _would_create_cycle(self, parent_id: str, child_id: str) -> bool:
         """Check if setting parent_id would create a circular reference."""
         visited = set()
         current = parent_id
@@ -122,18 +151,20 @@ class TaskService:
                 break
             visited.add(current)
 
-            parent_task = self.db.get(TaskModel, current)
-            current = parent_task.parent_task_id if parent_task else None
+            try:
+                parent_task = await TaskDocument.get(PydanticObjectId(current))
+                current = str(parent_task.parent_task_id) if parent_task and parent_task.parent_task_id else None
+            except Exception:
+                break
 
         return False
 
-    def _delete_subtasks_recursive(self, task: TaskModel):
+    async def _delete_subtasks_recursive(self, task_id: str):
         """Recursively delete all subtasks."""
-        # Query for children directly (more reliable than relationship)
-        children = self.db.execute(
-            select(TaskModel).where(TaskModel.parent_task_id == task.id)
-        ).scalars().all()
+        children = await TaskDocument.find(
+            {"parent_task_id": PydanticObjectId(task_id)}
+        ).to_list()
 
         for child in children:
-            self._delete_subtasks_recursive(child)
-            self.db.delete(child)
+            await self._delete_subtasks_recursive(str(child.id))
+            await child.delete()

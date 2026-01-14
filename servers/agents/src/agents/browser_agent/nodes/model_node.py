@@ -62,7 +62,25 @@ def model_node(state: AgentState) -> dict:
     Returns:
         Dictionary with the new message to append to state
     """
-    messages = state.messages
+    messages = list(state.messages)
+
+    # CRITICAL: Inject current screenshot so model sees latest visual state
+    # Without this, model only sees the initial screenshot from first HumanMessage
+    # This is transient (not persisted to state) - only for this model invocation
+    if state.current_screenshot and len(messages) > 0:
+        from langchain_core.messages import HumanMessage
+
+        # Append current screenshot as a new HumanMessage
+        screenshot_message = HumanMessage(
+            content=[
+                {
+                    "type": "image_url",
+                    "image_url": {"url": state.current_screenshot}
+                }
+            ]
+        )
+        messages.append(screenshot_message)
+        logger.info("Injected current screenshot into messages for model invocation")
 
     # Build system prompt with detected elements
     base_prompt = get_system_prompt()
@@ -89,7 +107,7 @@ def model_node(state: AgentState) -> dict:
 
     # Get model instance and invoke with system message + conversation messages
     model = get_model()
-    response = model.invoke([system_message] + list(messages))
+    response = model.invoke([system_message] + messages)
 
     # Log response details
     if response.tool_calls:

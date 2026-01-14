@@ -11,7 +11,10 @@
       "Bash(.venv/bin/alembic revision:*)",
       "Bash(uv init:*)",
       "Bash(uv add:*)",
-      "Bash(.venv/bin/alembic upgrade head)"
+      "Bash(.venv/bin/alembic upgrade head)",
+      "Bash(pnpm type-check:*)",
+      "Bash(brew list:*)",
+      "Bash(docker:*)"
     ]
   }
 }

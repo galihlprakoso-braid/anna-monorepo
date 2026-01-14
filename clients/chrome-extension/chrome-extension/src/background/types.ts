@@ -41,7 +41,6 @@ export interface AgentExecutionContext {
   threadId: string | null;
   state: AgentExecutionState;
   iterationCount: number;
-  lastResumeValue?: BrowserToolResult;
 }
 
 /**

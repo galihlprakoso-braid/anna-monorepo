@@ -952,76 +952,128 @@ async function executeBrowserAgentInBackground(
 
 /**
  * Main agent interrupt/resume loop
- * Implements the pattern from LangGraph interrupts documentation
+ * Implements the pattern from LangGraph SDK's useStream hook
+ *
+ * Key insights from SDK analysis (see @langchain/langgraph-sdk/dist/ui/manager.js):
+ * 1. Stream yields { event, data } chunks where event is 'values', 'error', etc.
+ * 2. Don't break early on interrupt - process ALL stream events
+ * 3. After stream ends, check final values for __interrupt__
+ * 4. Resume with { command: { resume: ... } } structure
  */
 const runAgentInterruptLoop = async (
   client: Client,
   context: AgentExecutionContext,
   initialState: AgentInitialState | null,
 ): Promise<void> => {
-  let currentInput = initialState;
+  // Initial input for first iteration, undefined for subsequent resumes
+  let currentInput: AgentInitialState | null | undefined = initialState;
+  // Resume command for subsequent iterations after interrupt
+  let resumeCommand: { resume: BrowserToolResult } | undefined = undefined;
 
   while (context.iterationCount < LANGGRAPH_CONFIG.MAX_ITERATIONS) {
     context.iterationCount++;
-    console.log(`${LOG_PREFIX.AGENT} Iteration ${context.iterationCount}`);
+    const isResume = !!resumeCommand;
+    console.log(`${LOG_PREFIX.AGENT} ========== Iteration ${context.iterationCount} ==========`);
+    console.log(`${LOG_PREFIX.AGENT} Mode: ${isResume ? 'RESUME' : 'INITIAL'}`);
+    if (isResume) {
+      console.log(`${LOG_PREFIX.AGENT} Resume command:`, JSON.stringify(resumeCommand).substring(0, 200));
+    }
 
     try {
-      // Check if we're resuming (not initial iteration)
-      const isResume = currentInput === null && context.iterationCount > 1;
-
       // Ensure threadId is valid
       if (!context.threadId) {
         throw new Error(`${LOG_PREFIX.ERROR} No thread ID available`);
       }
 
-      // Stream the run
-      const stream =
-        isResume && context.lastResumeValue
-          ? client.runs.stream(context.threadId, LANGGRAPH_CONFIG.ASSISTANT_ID, {
-              command: { resume: context.lastResumeValue },
-              streamMode: 'values' as const,
-            })
-          : client.runs.stream(context.threadId, LANGGRAPH_CONFIG.ASSISTANT_ID, {
-              input: currentInput,
-              streamMode: 'values' as const,
-            });
+      console.log(`${LOG_PREFIX.AGENT} Thread ID: ${context.threadId}`);
 
-      let hasInterrupt = false;
-      let interruptData: unknown = null;
+      // Build stream options based on whether we're resuming or starting fresh
+      // This mirrors how the SDK's submit() function works
+      const stream = resumeCommand
+        ? client.runs.stream(context.threadId, LANGGRAPH_CONFIG.ASSISTANT_ID, {
+            input: undefined, // Explicitly undefined when resuming
+            command: resumeCommand,
+            streamMode: 'values' as const,
+          })
+        : client.runs.stream(context.threadId, LANGGRAPH_CONFIG.ASSISTANT_ID, {
+            input: currentInput,
+            streamMode: 'values' as const,
+          });
 
-      // Process stream chunks
+      // Track latest values from stream (don't break early!)
+      // This is how the SDK's StreamManager.enqueue() works
+      let latestValues: Record<string, unknown> | null = null;
+      let chunkCount = 0;
+
+      // Process ALL stream events (SDK pattern: never break early)
       for await (const chunk of stream) {
-        console.log(`${LOG_PREFIX.AGENT} Received chunk:`, JSON.stringify(chunk).substring(0, 200));
+        chunkCount++;
+        const chunkEvent = (chunk as { event?: string }).event;
+        const chunkData = (chunk as { data?: unknown }).data;
 
-        // Check for __interrupt__ in the state
-        if (chunk.data && '__interrupt__' in chunk.data) {
-          hasInterrupt = true;
-          interruptData = chunk.data.__interrupt__;
-          console.log(`${LOG_PREFIX.INTERRUPT} Detected:`, interruptData);
-          break;
+        // Detailed logging for debugging
+        console.log(`${LOG_PREFIX.AGENT} Chunk #${chunkCount}:`, {
+          event: chunkEvent,
+          hasData: !!chunkData,
+          dataKeys: chunkData && typeof chunkData === 'object' ? Object.keys(chunkData as object) : [],
+        });
+
+        // Handle error events
+        if (chunkEvent === 'error') {
+          throw new Error(`Stream error: ${JSON.stringify(chunkData)}`);
         }
 
-        // Check for completion - SDK doesn't use 'end' or 'done' events in this way
-        // The stream just stops when there are no more chunks
+        // Store latest values when we get a 'values' event
+        // The SDK does: if (event === "values") this.setStreamValues(data)
+        if (chunkEvent === 'values' && chunkData && typeof chunkData === 'object') {
+          latestValues = chunkData as Record<string, unknown>;
+          const hasInterrupt = '__interrupt__' in latestValues;
+          console.log(`${LOG_PREFIX.AGENT} Values event - keys:`, Object.keys(latestValues), 'hasInterrupt:', hasInterrupt);
+
+          // Log if interrupt detected (but don't break!)
+          if (hasInterrupt) {
+            console.log(`${LOG_PREFIX.INTERRUPT} Detected! Value:`, JSON.stringify(latestValues.__interrupt__).substring(0, 300));
+          }
+        }
       }
 
-      // If no interrupt, execution is complete
-      if (!hasInterrupt) {
-        console.log(`${LOG_PREFIX.AGENT} No interrupt, execution finished`);
+      console.log(`${LOG_PREFIX.AGENT} Stream ended after ${chunkCount} chunks`);
+      console.log(`${LOG_PREFIX.AGENT} Final latestValues keys:`, latestValues ? Object.keys(latestValues) : 'null');
+
+      // After stream ends, check final values for interrupt
+      // This mirrors the SDK's interrupt getter logic
+      if (latestValues && '__interrupt__' in latestValues) {
+        const interruptArray = latestValues.__interrupt__;
+        console.log(`${LOG_PREFIX.INTERRUPT} Found __interrupt__, isArray:`, Array.isArray(interruptArray));
+
+        if (Array.isArray(interruptArray) && interruptArray.length > 0) {
+          console.log(`${LOG_PREFIX.INTERRUPT} Processing ${interruptArray.length} interrupt(s)`);
+
+          // Process interrupt
+          context.state = AgentExecutionState.INTERRUPTED;
+          const resumeValue = await handleInterrupt(context, interruptArray);
+
+          console.log(`${LOG_PREFIX.INTERRUPT} Got resume value, preparing for next iteration`);
+          console.log(`${LOG_PREFIX.INTERRUPT} Resume value:`, JSON.stringify(resumeValue).substring(0, 200));
+
+          // Set up for next iteration with resume command
+          // Clear input and set resume command (matches SDK pattern)
+          currentInput = undefined;
+          resumeCommand = { resume: resumeValue };
+        } else {
+          console.log(`${LOG_PREFIX.AGENT} __interrupt__ is empty or not array, treating as complete`);
+          context.state = AgentExecutionState.COMPLETED;
+          return;
+        }
+      } else {
+        // No interrupt in final values = execution complete
+        console.log(`${LOG_PREFIX.AGENT} No __interrupt__ in final values, execution finished`);
+        if (latestValues) {
+          console.log(`${LOG_PREFIX.AGENT} Final state keys:`, Object.keys(latestValues));
+        }
         context.state = AgentExecutionState.COMPLETED;
         return;
       }
-
-      // Process interrupt
-      context.state = AgentExecutionState.INTERRUPTED;
-      const resumeValue = await handleInterrupt(context, interruptData);
-
-      // Prepare for resume (set input to null, will use command: resume next iteration)
-      currentInput = null;
-
-      // For the next iteration, we'll pass the resume value through the command
-      // Store it in context for use in next iteration
-      context.lastResumeValue = resumeValue;
     } catch (error) {
       console.error(`${LOG_PREFIX.ERROR} Error in iteration ${context.iterationCount}:`, error);
       context.state = AgentExecutionState.FAILED;

@@ -15,7 +15,8 @@
       "Bash(pnpm type-check:*)",
       "Bash(brew list:*)",
       "Bash(docker:*)",
-      "Bash(uv run pytest:*)"
+      "Bash(uv run pytest:*)",
+      "Bash(.venv/bin/pytest:*)"
     ]
   }
 }

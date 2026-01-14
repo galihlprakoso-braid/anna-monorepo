@@ -742,4 +742,350 @@ class TestRealWorldWhatsAppFlow:
             f"According to the instruction workflow: collect visible first, THEN scroll for more."
         )
 
-    
+    def test_agent_decide_to_collect_data_again_after_scroll(
+        self,
+        whatsapp_instruction: str,
+        initial_screenshot: str
+    ):
+        """
+        Test that agent collects data again after scrolling to see older messages.
+
+        Flow:
+        1. Agent loaded skill
+        2. Agent saw loading screen, called wait
+        3. Agent called screenshot, saw chat list, called click
+        4. Chat opened, agent waited
+        5. Agent collected visible messages (12/20)
+        6. Agent scrolled up to load older messages
+        7. Agent called screenshot to see newly loaded messages
+        8. NOW: Agent should collect the newly visible messages
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Load the chat view screenshot AFTER scroll (ss-5.png) - now showing older messages
+        scrolled_screenshot_path = IMAGES_DIR / "ss-5.png"
+        assert scrolled_screenshot_path.exists(), f"Test image not found: {scrolled_screenshot_path}"
+        scrolled_screenshot = load_image_as_data_url(scrolled_screenshot_path)
+
+        # Build conversation history including the scroll action
+        messages = [
+            # 1. Initial request with loading screenshot
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            # 2. Agent loaded skill
+            AIMessage(
+                content="I will load the WhatsApp Web skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # 3. Agent saw loading screen, called wait
+            AIMessage(
+                content="Page is loading, I will wait.",
+                tool_calls=[{"id": "call_2", "name": "wait", "args": {"ms": 3000}}],
+            ),
+            ToolMessage(content="Waited 3000ms", tool_call_id="call_2"),
+            # 4. Agent called screenshot to check state
+            AIMessage(
+                content="Let me check if page has loaded.",
+                tool_calls=[{"id": "call_3", "name": "screenshot", "args": {"reason": "Check if page loaded"}}],
+            ),
+            ToolMessage(content="Screenshot requested: Check if page loaded", tool_call_id="call_3"),
+            # 5. Agent saw chat list, clicked first chat
+            AIMessage(
+                content="I see the chat list. I will click the first chat.",
+                tool_calls=[{"id": "call_4", "name": "click", "args": {"x": 10, "y": 30}}],
+            ),
+            ToolMessage(content="Clicked at grid position (10, 30)", tool_call_id="call_4"),
+            # 6. Agent waited for chat to load
+            AIMessage(
+                content="Waiting for chat to load.",
+                tool_calls=[{"id": "call_5", "name": "wait", "args": {"ms": 1000}}],
+            ),
+            ToolMessage(content="Waited 1000ms", tool_call_id="call_5"),
+            # 7. Agent collected visible messages (12/20)
+            AIMessage(
+                content="I see 12 messages visible in PAKE WA chat. I will collect them first.",
+                tool_calls=[{
+                    "id": "call_6",
+                    "name": "collect_data",
+                    "args": {
+                        "data": [
+                            "WhatsApp Messages | PAKE WA → 12 messages (12/20):\n"
+                            "[User]: Mau esuk ki Mas (05:47) | "
+                            "[PAKE WA]: Kok iso boso jowo sisan yo? (10:04) | "
+                            "[User]: Jajal upload en neng YouTube pak (10:04) | "
+                            "[User]: Kek ono gambar2 AI (10:04) | "
+                            "[PAKE WA]: Ngerti kanggo sopo mas lagu kwi? (10:10) | "
+                            "[User]: sek lagi tak rungokne (10:11) | "
+                            "[PAKE WA]: dinggo lek to kah? (10:12) | "
+                            "[User]: ref e marai nangis.. progressi chord e api pak (10:13) | "
+                            "[User]: wes tak rungokne sampek bar (10:14) | "
+                            "[PAKE WA]: Yo e (10:24) | "
+                            "[User]: Makan di mana?? (12:45) | "
+                            "[PAKE WA]: Neng warung mau pak (13:12)"
+                        ]
+                    }
+                }],
+            ),
+            ToolMessage(content="Successfully collected 12 messages from PAKE WA (12/20 collected). Need 8 more messages to reach target.", tool_call_id="call_6"),
+            # 8. Agent scrolled up to load older messages
+            AIMessage(
+                content="I need 8 more messages. I will scroll up to load older messages.",
+                tool_calls=[{"id": "call_7", "name": "scroll", "args": {"direction": "up", "amount": 300}}],
+            ),
+            ToolMessage(content="Scrolled up by 300 pixels", tool_call_id="call_7"),
+            # 9. Agent called screenshot to see newly loaded messages
+            AIMessage(
+                content="Let me take a screenshot to see the newly loaded messages after scrolling.",
+                tool_calls=[{"id": "call_8", "name": "screenshot", "args": {"reason": "See messages after scroll"}}],
+            ),
+            ToolMessage(content="Screenshot requested: See messages after scroll", tool_call_id="call_8"),
+        ]
+
+        # Create state with scrolled screenshot (ss-5.png showing more messages)
+        state = AgentState(
+            messages=messages,
+            current_screenshot=scrolled_screenshot,  # NOW showing ss-5.png with older messages
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        # Run element detection
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+
+        print("\n" + "="*70)
+        print("DEBUG: State after scroll")
+        print("="*70)
+
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        print(f"Detected {len(state.detected_elements)} elements")
+        print("="*70)
+
+        # Call model_node to get agent's next decision
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        tool_names = [tc["name"] for tc in ai_message.tool_calls] if ai_message.tool_calls else []
+
+        print("\n" + "="*70)
+        print("AGENT RESPONSE AFTER SCROLL:")
+        print("="*70)
+        print(f"Text: {ai_message.content}")
+        print(f"Tools called: {tool_names}")
+        if ai_message.tool_calls:
+            for tc in ai_message.tool_calls:
+                print(f"  - {tc['name']}({tc.get('args', {})})")
+        print("="*70)
+
+        # Assertion: Agent should collect the newly visible messages
+        assert "collect_data" in tool_names, (
+            f"Agent should collect newly visible messages after scrolling.\n"
+            f"Instead called: {tool_names}\n"
+            f"After scrolling, more older messages are now visible and should be collected."
+        )
+
+    def test_agent_decide_to_click_next_chat_after_collecting(
+        self,
+        whatsapp_instruction: str,
+        initial_screenshot: str
+    ):
+        """
+        Test that agent clicks next chat after finishing data collection from current chat.
+
+        Flow:
+        1. Agent loaded skill
+        2. Agent saw loading screen, called wait
+        3. Agent called screenshot, saw chat list, called click
+        4. Chat opened, agent waited
+        5. Agent collected visible messages (12/20)
+        6. Agent scrolled up to load older messages
+        7. Agent called screenshot to see newly loaded messages
+        8. Agent collected newly visible messages (reaching 20/20 total)
+        9. NOW: Agent should click the next chat to continue collection
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Still using ss-5.png - same screen, but agent has now collected all messages
+        scrolled_screenshot_path = IMAGES_DIR / "ss-5.png"
+        assert scrolled_screenshot_path.exists(), f"Test image not found: {scrolled_screenshot_path}"
+        scrolled_screenshot = load_image_as_data_url(scrolled_screenshot_path)
+
+        # Build conversation history including the second collect_data
+        messages = [
+            # 1. Initial request with loading screenshot
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            # 2. Agent loaded skill
+            AIMessage(
+                content="I will load the WhatsApp Web skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # 3. Agent saw loading screen, called wait
+            AIMessage(
+                content="Page is loading, I will wait.",
+                tool_calls=[{"id": "call_2", "name": "wait", "args": {"ms": 3000}}],
+            ),
+            ToolMessage(content="Waited 3000ms", tool_call_id="call_2"),
+            # 4. Agent called screenshot to check state
+            AIMessage(
+                content="Let me check if page has loaded.",
+                tool_calls=[{"id": "call_3", "name": "screenshot", "args": {"reason": "Check if page loaded"}}],
+            ),
+            ToolMessage(content="Screenshot requested: Check if page loaded", tool_call_id="call_3"),
+            # 5. Agent saw chat list, clicked first chat (PAKE WA)
+            AIMessage(
+                content="I see the chat list. I will click the first chat.",
+                tool_calls=[{"id": "call_4", "name": "click", "args": {"x": 10, "y": 30}}],
+            ),
+            ToolMessage(content="Clicked at grid position (10, 30)", tool_call_id="call_4"),
+            # 6. Agent waited for chat to load
+            AIMessage(
+                content="Waiting for chat to load.",
+                tool_calls=[{"id": "call_5", "name": "wait", "args": {"ms": 1000}}],
+            ),
+            ToolMessage(content="Waited 1000ms", tool_call_id="call_5"),
+            # 7. Agent collected first batch of visible messages (12/20)
+            AIMessage(
+                content="I see 12 messages visible in PAKE WA chat. I will collect them first.",
+                tool_calls=[{
+                    "id": "call_6",
+                    "name": "collect_data",
+                    "args": {
+                        "data": [
+                            "WhatsApp Messages | PAKE WA → 12 messages (12/20):\n"
+                            "[User]: Mau esuk ki Mas (05:47) | "
+                            "[PAKE WA]: Kok iso boso jowo sisan yo? (10:04) | "
+                            "[User]: Jajal upload en neng YouTube pak (10:04) | "
+                            "[User]: Kek ono gambar2 AI (10:04) | "
+                            "[PAKE WA]: Ngerti kanggo sopo mas lagu kwi? (10:10) | "
+                            "[User]: sek lagi tak rungokne (10:11) | "
+                            "[PAKE WA]: dinggo lek to kah? (10:12) | "
+                            "[User]: ref e marai nangis.. progressi chord e api pak (10:13) | "
+                            "[User]: wes tak rungokne sampek bar (10:14) | "
+                            "[PAKE WA]: Yo e (10:24) | "
+                            "[User]: Makan di mana?? (12:45) | "
+                            "[PAKE WA]: Neng warung mau pak (13:12)"
+                        ]
+                    }
+                }],
+            ),
+            ToolMessage(content="Successfully collected 12 messages from PAKE WA (12/20 collected). Need 8 more messages to reach target.", tool_call_id="call_6"),
+            # 8. Agent scrolled up to load older messages
+            AIMessage(
+                content="I need 8 more messages. I will scroll up to load older messages.",
+                tool_calls=[{"id": "call_7", "name": "scroll", "args": {"direction": "up", "amount": 300}}],
+            ),
+            ToolMessage(content="Scrolled up by 300 pixels", tool_call_id="call_7"),
+            # 9. Agent called screenshot to see newly loaded messages
+            AIMessage(
+                content="Let me take a screenshot to see the newly loaded messages after scrolling.",
+                tool_calls=[{"id": "call_8", "name": "screenshot", "args": {"reason": "See messages after scroll"}}],
+            ),
+            ToolMessage(content="Screenshot requested: See messages after scroll", tool_call_id="call_8"),
+            # 10. Agent collected newly visible older messages (reaching 20/20 total)
+            AIMessage(
+                content="I see more messages after scrolling. I will collect them to reach 20 messages total.",
+                tool_calls=[{
+                    "id": "call_9",
+                    "name": "collect_data",
+                    "args": {
+                        "data": [
+                            "WhatsApp Messages | PAKE WA → 20 messages (20/20):\n"
+                            "[PAKE WA]: Lak io loro opo pak? (14:51) | "
+                            "[User]: Ginjal e mas (14:51) | "
+                            "[PAKE WA]: Ginjal e nyopo pak? (14:52) | "
+                            "[User]: Disfungsi mas (14:56) | "
+                            "[User]: tapi si jk mungkin hasil e bersik (15:07) | "
+                            "[System]: Voice call (21:11) | "
+                            "[User]: Audio message (10:02) | "
+                            "[User]: Jam 5.47 | "
+                            "[User]: Mau esuk ki Mas (05:47) | "
+                            "[PAKE WA]: Kok iso boso jowo sisan yo? (10:04) | "
+                            "[User]: Jajal upload en neng YouTube pak (10:04) | "
+                            "[User]: Kek ono gambar2 AI (10:04) | "
+                            "[PAKE WA]: Ngerti kanggo sopo mas lagu kwi? (10:10) | "
+                            "[User]: sek lagi tak rungokne (10:11) | "
+                            "[PAKE WA]: dinggo lek to kah? (10:12) | "
+                            "[User]: ref e marai nangis.. progressi chord e api pak (10:13) | "
+                            "[User]: wes tak rungokne sampek bar (10:14) | "
+                            "[PAKE WA]: Yo e (10:24) | "
+                            "[User]: Makan di mana?? (12:45) | "
+                            "[PAKE WA]: Neng warung mau pak (13:12)"
+                        ]
+                    }
+                }],
+            ),
+            ToolMessage(content="Successfully collected 20 messages from PAKE WA (20/20 collected). Completed collection for this chat. Task requires collecting from 10 chats total - need to move to next chat.", tool_call_id="call_9"),
+        ]
+
+        # Create state with same screenshot (agent needs to navigate back to chat list)
+        state = AgentState(
+            messages=messages,
+            current_screenshot=scrolled_screenshot,  # Still in PAKE WA chat, can see chat list on left
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        # Run element detection
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+
+        print("\n" + "="*70)
+        print("DEBUG: State after collecting 20/20 messages")
+        print("="*70)
+
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        print(f"Detected {len(state.detected_elements)} elements")
+        print("="*70)
+
+        # Call model_node to get agent's next decision
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        tool_names = [tc["name"] for tc in ai_message.tool_calls] if ai_message.tool_calls else []
+
+        print("\n" + "="*70)
+        print("AGENT RESPONSE AFTER COMPLETING CHAT COLLECTION:")
+        print("="*70)
+        print(f"Text: {ai_message.content}")
+        print(f"Tools called: {tool_names}")
+        if ai_message.tool_calls:
+            for tc in ai_message.tool_calls:
+                print(f"  - {tc['name']}({tc.get('args', {})})")
+        print("="*70)
+
+        # Assertion: Agent should click the next chat to continue collection
+        assert "click" in tool_names, (
+            f"Agent should click the next chat after finishing collection from current chat.\n"
+            f"Instead called: {tool_names}\n"
+            f"Collected 20/20 messages from PAKE WA. Task requires 10 chats total - need to move to next chat."
+        )
+

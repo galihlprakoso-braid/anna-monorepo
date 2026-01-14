@@ -177,14 +177,29 @@ class TestRealWorldWhatsAppFlow:
         """The instruction sent from Chrome extension."""
         return (
             "Collect the last 20 messages from each of the last 10 chats on WhatsApp Web. "
-            "Format the data as: contact/group name → messages → each message with datetime. "
+            "\n\n"
+            "Output Format:\n"
+            "- Title: 'WhatsApp Messages'\n"
+            "- For each message, identify sender:\n"
+            "  * [User]: Messages sent by the logged-in user (green bubbles on right)\n"
+            "  * [ContactName]: Messages from the contact/group member (white bubbles on left)\n"
+            "- Format: 'WhatsApp Messages | ContactName → [Sender]: message (HH:MM)'\n"
+            "- Include message count: (X/20 collected)\n"
+            "\n"
+            "Example:\n"
+            "'WhatsApp Messages | PAKE WA → 12 messages (12/20): "
+            "[PAKE WA]: Mau esuk ki Mas (05:47) | "
+            "[User]: Kok iso boso jowo sisan yo? (10:04) | "
+            "[PAKE WA]: Yo e (10:24)'\n"
+            "\n"
             "IMPORTANT workflow: "
-            "(1) When you open a chat, collect the VISIBLE messages FIRST with collect_data, "
-            "(2) THEN scroll up to load older messages, "
-            "(3) Collect again with collect_data (this is progressive collection), "
-            "(4) Repeat scrolling and collecting until you have approximately 20 messages total, "
-            "(5) After finishing one chat, move to the next chat and repeat. "
-            "The collect_data tool does NOT end the task - you will call it many times throughout this process."
+            "(1) When you open a chat, collect ALL VISIBLE messages FIRST with collect_data (include count), "
+            "(2) Count messages. If < 20, scroll up to load older messages, "
+            "(3) After scrolling, take screenshot to see new messages, "
+            "(4) Collect newly visible messages with collect_data (include updated count), "
+            "(5) Repeat until ~20 messages total for this chat, "
+            "(6) Move to next chat and repeat. "
+            "The collect_data tool does NOT end the task - call it many times."
         )
 
     @pytest.fixture
@@ -583,6 +598,148 @@ class TestRealWorldWhatsAppFlow:
             f"Agent should call collect_data when seeing messages in open chat.\n"
             f"Instead called: {tool_names}\n"
             f"The screenshot shows PAKE WA chat open with multiple messages visible."
+        )
+
+    def test_agent_decide_to_scroll_after_collecting(
+        self,
+        whatsapp_instruction: str,
+        initial_screenshot: str
+    ):
+        """
+        Test that agent scrolls up after collecting visible messages to load older messages.
+
+        Flow:
+        1. Agent loaded skill
+        2. Agent saw loading screen, called wait
+        3. Agent called screenshot, saw chat list, called click
+        4. Chat opened, agent waited
+        5. Agent collected visible messages with collect_data
+        6. NOW: Agent should scroll up to load older messages
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Load the chat view screenshot (ss-4.png) - same as before, no new messages yet
+        chat_view_screenshot_path = IMAGES_DIR / "ss-4.png"
+        assert chat_view_screenshot_path.exists(), f"Test image not found: {chat_view_screenshot_path}"
+        chat_view_screenshot = load_image_as_data_url(chat_view_screenshot_path)
+
+        # Build conversation history including the collect_data call
+        messages = [
+            # 1. Initial request with loading screenshot
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            # 2. Agent loaded skill
+            AIMessage(
+                content="I will load the WhatsApp Web skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # 3. Agent saw loading screen, called wait
+            AIMessage(
+                content="Page is loading, I will wait.",
+                tool_calls=[{"id": "call_2", "name": "wait", "args": {"ms": 3000}}],
+            ),
+            ToolMessage(content="Waited 3000ms", tool_call_id="call_2"),
+            # 4. Agent called screenshot to check state
+            AIMessage(
+                content="Let me check if page has loaded.",
+                tool_calls=[{"id": "call_3", "name": "screenshot", "args": {"reason": "Check if page loaded"}}],
+            ),
+            ToolMessage(content="Screenshot requested: Check if page loaded", tool_call_id="call_3"),
+            # 5. Agent saw chat list, clicked first chat
+            AIMessage(
+                content="I see the chat list. I will click the first chat.",
+                tool_calls=[{"id": "call_4", "name": "click", "args": {"x": 10, "y": 30}}],
+            ),
+            ToolMessage(content="Clicked at grid position (10, 30)", tool_call_id="call_4"),
+            # 6. Agent waited for chat to load
+            AIMessage(
+                content="Waiting for chat to load.",
+                tool_calls=[{"id": "call_5", "name": "wait", "args": {"ms": 1000}}],
+            ),
+            ToolMessage(content="Waited 1000ms", tool_call_id="call_5"),
+            # 7. Agent collected ALL visible messages (12 messages from ss-4.png)
+            AIMessage(
+                content="I see 12 messages visible in PAKE WA chat. I will collect them first.",
+                tool_calls=[{
+                    "id": "call_6",
+                    "name": "collect_data",
+                    "args": {
+                        "data": [
+                            "PAKE WA → 12 messages collected (12/20): "
+                            "1. Mau esuk ki Mas (05:47); "
+                            "2. Kok iso boso jowo sisan yo? (10:04); "
+                            "3. Jajal upload en neng YouTube pak (10:04); "
+                            "4. Kek ono gambar2 AI (10:04); "
+                            "5. Ngerti kanggo sopo mas lagu kwi? (10:10); "
+                            "6. sek lagi tak rungokne (10:11); "
+                            "7. dinggo lek to kah? (10:12); "
+                            "8. ref e marai nangis.. progressi chord e api pak (10:13); "
+                            "9. wes tak rungokne sampek bar (10:14); "
+                            "10. Yo e (10:24); "
+                            "11. Makan di mana?? (12:45); "
+                            "12. Neng warung mau pak (13:12)"
+                        ]
+                    }
+                }],
+            ),
+            ToolMessage(content="Successfully collected 12 messages from PAKE WA (12/20 collected). Need 8 more messages to reach target.", tool_call_id="call_6"),
+        ]
+
+        # Create state with same chat view screenshot (no scroll happened yet)
+        state = AgentState(
+            messages=messages,
+            current_screenshot=chat_view_screenshot,  # Same ss-4.png
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        # Run element detection
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+
+        print("\n" + "="*70)
+        print("DEBUG: State after collect_data")
+        print("="*70)
+
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        print(f"Detected {len(state.detected_elements)} elements")
+        print("="*70)
+
+        # Call model_node to get agent's next decision
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        tool_names = [tc["name"] for tc in ai_message.tool_calls] if ai_message.tool_calls else []
+
+        print("\n" + "="*70)
+        print("AGENT RESPONSE AFTER COLLECTING:")
+        print("="*70)
+        print(f"Text: {ai_message.content}")
+        print(f"Tools called: {tool_names}")
+        if ai_message.tool_calls:
+            for tc in ai_message.tool_calls:
+                print(f"  - {tc['name']}({tc.get('args', {})})")
+        print("="*70)
+
+        # Assertion: Agent should scroll up to load older messages
+        assert "scroll" in tool_names, (
+            f"Agent should scroll up after collecting visible messages to load older messages.\n"
+            f"Instead called: {tool_names}\n"
+            f"According to the instruction workflow: collect visible first, THEN scroll for more."
         )
 
     

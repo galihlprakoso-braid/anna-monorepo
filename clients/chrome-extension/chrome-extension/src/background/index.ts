@@ -413,15 +413,97 @@ function executeBrowserAction(action: string, payload: unknown): { action: strin
 
       let clickedInfo = '';
       if (element) {
-        // Get useful info about clicked element
+        // Get comprehensive info about clicked element for better AI feedback
         const tagName = element.tagName.toLowerCase();
         const id = element.id ? `#${element.id}` : '';
         const className =
           element.className && typeof element.className === 'string'
             ? `.${element.className.split(' ').join('.')}`
             : '';
-        const text = element.textContent?.trim().slice(0, 30) || '';
-        clickedInfo = `${tagName}${id}${className}${text ? ` "${text}"` : ''}`;
+
+        // Get full text content (not truncated)
+        const text = element.textContent?.trim() || '';
+        const textPreview = text.length > 50 ? text.slice(0, 50) + '...' : text;
+
+        // Get ARIA labels for better semantic understanding
+        const ariaLabel = element.getAttribute('aria-label') || '';
+        const ariaRole = element.getAttribute('role') || '';
+        const ariaLabelledBy = element.getAttribute('aria-labelledby') || '';
+
+        // Get computed styles for visual description
+        const computedStyle = window.getComputedStyle(element);
+        const backgroundColor = computedStyle.backgroundColor;
+        const color = computedStyle.color;
+        const fontSize = computedStyle.fontSize;
+        const fontWeight = computedStyle.fontWeight;
+
+        // Detect visual characteristics
+        const visualDesc: string[] = [];
+
+        // Color detection - convert rgb to human-readable colors
+        const rgbToColorName = (rgb: string): string => {
+          if (rgb === 'rgba(0, 0, 0, 0)' || rgb === 'transparent') return 'transparent';
+          const match = rgb.match(/\d+/g);
+          if (!match) return rgb;
+          const [r, g, b] = match.map(Number);
+
+          // Simple color detection
+          if (r > 200 && g > 200 && b > 200) return 'white/light';
+          if (r < 50 && g < 50 && b < 50) return 'black/dark';
+          if (r > 150 && g < 100 && b < 100) return 'red';
+          if (r < 100 && g > 150 && b < 100) return 'green';
+          if (r < 100 && g < 100 && b > 150) return 'blue';
+          if (r > 150 && g > 150 && b < 100) return 'yellow';
+          if (r > 150 && g < 100 && b > 150) return 'purple';
+          if (r > 150 && g > 100 && b < 100) return 'orange';
+          return rgb;
+        };
+
+        const bgColorName = rgbToColorName(backgroundColor);
+        if (bgColorName !== 'transparent') {
+          visualDesc.push(`background: ${bgColorName}`);
+        }
+
+        const textColorName = rgbToColorName(color);
+        visualDesc.push(`text: ${textColorName}`);
+
+        // Font weight detection
+        const weight = parseInt(fontWeight);
+        if (weight >= 700) {
+          visualDesc.push('bold text');
+        }
+
+        // Build rich description
+        const parts: string[] = [];
+
+        // 1. Element type with ARIA role if available
+        if (ariaRole) {
+          parts.push(`${tagName} (role: ${ariaRole})`);
+        } else {
+          parts.push(tagName);
+        }
+
+        // 2. Element identifier (id/class)
+        if (id || className) {
+          parts.push(`${id}${className}`);
+        }
+
+        // 3. Visual characteristics
+        if (visualDesc.length > 0) {
+          parts.push(`[${visualDesc.join(', ')}]`);
+        }
+
+        // 4. ARIA label (semantic meaning)
+        if (ariaLabel) {
+          parts.push(`aria-label="${ariaLabel}"`);
+        }
+
+        // 5. Text content
+        if (text) {
+          parts.push(`text="${textPreview}"`);
+        }
+
+        clickedInfo = parts.join(' | ');
         console.log('[Agent Content] Clicked element info:', clickedInfo);
       }
 
@@ -487,7 +569,13 @@ function executeBrowserAction(action: string, payload: unknown): { action: strin
       }
     }
     case 'scroll': {
-      const { direction, amount = 300 } = payload as { direction: 'up' | 'down' | 'left' | 'right'; amount?: number };
+      const { direction, amount = 300, x, y } = payload as {
+        direction: 'up' | 'down' | 'left' | 'right';
+        amount?: number;
+        x?: number; // Pixel coordinates (already converted from grid)
+        y?: number;
+      };
+
       const scrollMap: Record<string, [number, number]> = {
         up: [0, -amount],
         down: [0, amount],
@@ -495,6 +583,46 @@ function executeBrowserAction(action: string, payload: unknown): { action: strin
         right: [amount, 0],
       };
       const [dx, dy] = scrollMap[direction] || [0, 0];
+
+      // If coordinates provided, find and scroll specific element
+      if (x !== undefined && y !== undefined) {
+        const element = document.elementFromPoint(x, y);
+        if (element) {
+          // Find closest scrollable parent
+          let scrollableElement: Element | null = element;
+          while (scrollableElement) {
+            const style = window.getComputedStyle(scrollableElement);
+            const isScrollable =
+              style.overflow === 'auto' ||
+              style.overflow === 'scroll' ||
+              style.overflowY === 'auto' ||
+              style.overflowY === 'scroll' ||
+              style.overflowX === 'auto' ||
+              style.overflowX === 'scroll';
+
+            if (
+              isScrollable &&
+              (scrollableElement.scrollHeight > scrollableElement.clientHeight ||
+                scrollableElement.scrollWidth > scrollableElement.clientWidth)
+            ) {
+              scrollableElement.scrollBy(dx, dy);
+              return {
+                action: 'scroll',
+                details: `Scrolled ${direction} by ${amount}px at (${x}, ${y}) on element: ${scrollableElement.tagName}.${scrollableElement.className}`,
+              };
+            }
+            scrollableElement = scrollableElement.parentElement;
+          }
+          // Fallback if no scrollable parent found
+          window.scrollBy(dx, dy);
+          return {
+            action: 'scroll',
+            details: `Scrolled ${direction} by ${amount}px at (${x}, ${y}) - no scrollable element found, scrolled window`,
+          };
+        }
+      }
+
+      // No coordinates, scroll entire window (backward compatible)
       window.scrollBy(dx, dy);
       return { action: 'scroll', details: `Scrolled ${direction} by ${amount}px` };
     }
@@ -664,6 +792,17 @@ chrome.alarms.onAlarm.addListener(async alarm => {
  */
 async function executeDataSourceCollection(dataSourceId: string) {
   try {
+    // Check if execution already running (prevent overlaps from scheduled alarms)
+    const activeExecution = activeExecutions.get(dataSourceId);
+    if (activeExecution) {
+      const runningFor = Math.round((Date.now() - activeExecution.startedAt) / 1000);
+      console.log(
+        `${LOG_PREFIX.BACKGROUND} Skipping: execution already running for "${dataSourceId}" ` +
+          `(thread: ${activeExecution.threadId}, running for ${runningFor}s)`,
+      );
+      return;
+    }
+
     console.log(`${LOG_PREFIX.BACKGROUND} Executing data collection for: ${dataSourceId}`);
 
     // Get data source - try cache first, then API
@@ -684,12 +823,27 @@ async function executeDataSourceCollection(dataSourceId: string) {
 
     console.log(`${LOG_PREFIX.BACKGROUND} Using dedicated tab ${tabId} for data collection`);
 
-    // Execute browser agent in background
-    await executeBrowserAgentInBackground(dataSourceId, tabId, dataSource.instruction!);
+    // Mark execution as active BEFORE starting (threadId will be updated when created)
+    activeExecutions.set(dataSourceId, {
+      threadId: 'pending',
+      startedAt: Date.now(),
+      tabId,
+    });
 
-    console.log(`${LOG_PREFIX.BACKGROUND} Data collection completed for: ${dataSource.name}`);
+    try {
+      // Execute browser agent in background
+      await executeBrowserAgentInBackground(dataSourceId, tabId, dataSource.instruction!);
+
+      console.log(`${LOG_PREFIX.BACKGROUND} Data collection completed for: ${dataSource.name}`);
+    } finally {
+      // Clear execution tracking when done (success or error)
+      activeExecutions.delete(dataSourceId);
+      console.log(`${LOG_PREFIX.BACKGROUND} Cleared execution tracking for: ${dataSourceId}`);
+    }
   } catch (error) {
     console.error(`${LOG_PREFIX.ERROR} Data collection failed:`, error);
+    // Ensure cleanup on error
+    activeExecutions.delete(dataSourceId);
   }
 }
 
@@ -702,6 +856,19 @@ async function executeDataSourceCollection(dataSourceId: string) {
  * Key: dataSourceId, Value: tabId
  */
 const dataSourceTabs = new Map<string, number>();
+
+/**
+ * Track active executions to prevent overlapping scheduled tasks
+ * Key: dataSourceId, Value: execution info
+ */
+const activeExecutions = new Map<
+  string,
+  {
+    threadId: string;
+    startedAt: number;
+    tabId: number;
+  }
+>();
 
 /**
  * Ensure dedicated tab exists for a data source
@@ -788,6 +955,7 @@ export async function closeDedicatedTab(dataSourceId: string): Promise<void> {
       console.warn(`${LOG_PREFIX.TAB} Failed to close tab ${tabId}:`, error);
     } finally {
       dataSourceTabs.delete(dataSourceId);
+      activeExecutions.delete(dataSourceId); // Also clear execution tracking
     }
   }
 }
@@ -841,7 +1009,7 @@ async function executeToolCallOnTab(tabId: number, action: string, args: Record<
   try {
     console.log(`${LOG_PREFIX.TOOL} Executing ${action} on tab ${tabId} with args:`, args);
 
-    // Convert grid coordinates to pixels for click/drag actions
+    // Convert grid coordinates to pixels for click/drag/scroll actions
     let processedArgs = args;
 
     if (action === 'click' && 'x' in args && 'y' in args) {
@@ -861,6 +1029,15 @@ async function executeToolCallOnTab(tabId: number, action: string, args: Record<
         startY: Math.round(((args.start_y as number) / GRID_MAX) * viewport.height),
         endX: Math.round(((args.end_x as number) / GRID_MAX) * viewport.width),
         endY: Math.round(((args.end_y as number) / GRID_MAX) * viewport.height),
+      };
+    } else if (action === 'scroll' && 'x' in args && 'y' in args && args.x !== null && args.y !== null) {
+      const capture = await captureScreenshotFromTab(tabId);
+      const viewport = capture?.viewport || { width: 800, height: 600 };
+
+      processedArgs = {
+        ...args,
+        x: Math.round(((args.x as number) / GRID_MAX) * viewport.width),
+        y: Math.round(((args.y as number) / GRID_MAX) * viewport.height),
       };
     }
 
@@ -915,6 +1092,12 @@ async function executeBrowserAgentInBackground(
     const threadId = thread.thread_id;
 
     console.log(`${LOG_PREFIX.AGENT} Created thread: ${threadId}`);
+
+    // Update activeExecutions with actual threadId
+    const executionInfo = activeExecutions.get(dataSourceId);
+    if (executionInfo) {
+      executionInfo.threadId = threadId;
+    }
 
     // Step 4: Prepare initial state
     const initialState: AgentInitialState = {

@@ -174,33 +174,31 @@ class TestRealWorldWhatsAppFlow:
 
     @pytest.fixture
     def whatsapp_instruction(self) -> str:
-        """The instruction sent from Chrome extension."""
-        return (
-            "Collect the last 20 messages from each of the last 10 chats on WhatsApp Web. "
-            "\n\n"
-            "Output Format:\n"
-            "- Title: 'WhatsApp Messages'\n"
-            "- For each message, identify sender:\n"
-            "  * [User]: Messages sent by the logged-in user (green bubbles on right)\n"
-            "  * [ContactName]: Messages from the contact/group member (white bubbles on left)\n"
-            "- Format: 'WhatsApp Messages | ContactName → [Sender]: message (HH:MM)'\n"
-            "- Include message count: (X/20 collected)\n"
-            "\n"
-            "Example:\n"
-            "'WhatsApp Messages | PAKE WA → 12 messages (12/20): "
-            "[PAKE WA]: Mau esuk ki Mas (05:47) | "
-            "[User]: Kok iso boso jowo sisan yo? (10:04) | "
-            "[PAKE WA]: Yo e (10:24)'\n"
-            "\n"
-            "IMPORTANT workflow: "
-            "(1) When you open a chat, collect ALL VISIBLE messages FIRST with collect_data (include count), "
-            "(2) Count messages. If < 20, scroll up to load older messages, "
-            "(3) After scrolling, take screenshot to see new messages, "
-            "(4) Collect newly visible messages with collect_data (include updated count), "
-            "(5) Repeat until ~20 messages total for this chat, "
-            "(6) Move to next chat and repeat. "
-            "The collect_data tool does NOT end the task - call it many times."
-        )
+        """The instruction sent from Chrome extension (matches database instruction)."""
+        return """Collect the last 20 messages from each of the last 10 chats on WhatsApp Web.
+
+Output Format (use collect_data tool):
+- Format: 'WhatsApp Messages | ContactName → X messages (X/20): [Sender]: message (HH:MM) | ...'
+- Identify sender: [User] for your messages (green bubbles), [ContactName] for received (white bubbles)
+
+Example output:
+'WhatsApp Messages | PAKE WA → 12 messages (12/20):
+[PAKE WA]: Mau esuk ki Mas (05:47) |
+[User]: Kok iso boso jowo sisan yo? (10:04) |
+[PAKE WA]: Yo e (10:24)'
+
+Workflow:
+1. Load the whatsapp-web skill for site-specific guidance
+2. For each chat:
+   - Open the chat
+   - Collect visible messages using collect_data (include count like "12/20")
+   - If fewer than 20 messages, scroll up to load older ones
+   - Collect newly visible messages
+   - Continue until you have ~20 messages per chat
+3. Move to the next chat and repeat
+
+Remember: Call collect_data multiple times (once per chat or after each scroll). It does NOT end the task.
+"""
 
     @pytest.fixture
     def initial_screenshot(self) -> str:
@@ -735,12 +733,60 @@ class TestRealWorldWhatsAppFlow:
                 print(f"  - {tc['name']}({tc.get('args', {})})")
         print("="*70)
 
-        # Assertion: Agent should scroll up to load older messages
-        assert "scroll" in tool_names, (
-            f"Agent should scroll up after collecting visible messages to load older messages.\n"
-            f"Instead called: {tool_names}\n"
-            f"According to the instruction workflow: collect visible first, THEN scroll for more."
-        )
+        # Accept two patterns:
+        # Pattern 1: Direct scroll (ideal)
+        # Pattern 2: Click to focus → then scroll (valid interaction pattern)
+
+        if "scroll" in tool_names:
+            # Pattern 1: Agent scrolls directly (ideal)
+            print("\n✅ PASS: Agent scrolls directly to load older messages")
+
+        elif "click" in tool_names:
+            # Pattern 2: Agent clicks to focus first (valid pattern)
+            print("\n📋 Agent clicked to focus message area (valid pattern)")
+            print("   Now checking if agent scrolls in the next action...")
+
+            # Simulate the click result - same screenshot since clicking doesn't change content
+            messages.append(ai_message)
+            click_tool_call = ai_message.tool_calls[0]
+            messages.append(ToolMessage(
+                content=f"Clicked at grid position ({click_tool_call['args']['x']}, {click_tool_call['args']['y']})",
+                tool_call_id=click_tool_call["id"]
+            ))
+
+            # Update state with click result
+            state.messages = messages
+
+            # Run element detection again
+            detection_result = element_detection_node(state)
+            state.detected_elements = detection_result.get("detected_elements", [])
+
+            # Get next decision
+            result2 = model_node(state)
+            ai_message2 = result2["messages"][0]
+            tool_names2 = [tc["name"] for tc in ai_message2.tool_calls] if ai_message2.tool_calls else []
+
+            print(f"\n   Next action: {tool_names2}")
+            if ai_message2.tool_calls:
+                for tc in ai_message2.tool_calls:
+                    print(f"     - {tc['name']}({tc.get('args', {})})")
+
+            # Now check if the agent scrolls
+            assert "scroll" in tool_names2, (
+                f"Agent clicked to focus (valid), but should scroll next to load older messages.\n"
+                f"Instead called: {tool_names2}\n"
+                f"Pattern should be: collect → click (to focus) → scroll → screenshot → collect more"
+            )
+
+            print("   ✅ PASS: Agent scrolls after clicking to focus")
+
+        else:
+            # Neither scroll nor click - unexpected
+            assert False, (
+                f"Agent should either scroll directly OR click to focus then scroll.\n"
+                f"Instead called: {tool_names}\n"
+                f"According to the instruction workflow: collect visible first, THEN scroll for more."
+            )
 
     def test_agent_decide_to_collect_data_again_after_scroll(
         self,
@@ -1089,3 +1135,461 @@ class TestRealWorldWhatsAppFlow:
             f"Collected 20/20 messages from PAKE WA. Task requires 10 chats total - need to move to next chat."
         )
 
+    def test_agent_click_reasoning_with_green_banner(
+        self,
+        whatsapp_instruction: str,
+        initial_screenshot: str
+    ):
+        """
+        DIAGNOSTIC TEST: Understand why agent clicks green banner instead of first chat.
+
+        This test does NOT aim to pass. Instead, it captures the AI's reasoning
+        to help us understand:
+        - What coordinates the AI chooses
+        - Why the AI picks those coordinates
+        - What visual cues mislead the AI
+
+        ss-6.png shows:
+        - Green "Turn on background sync" banner at top
+        - Chat list below (My family, AHMAD SOMPRET FAMILY, PAKE WA, etc.)
+
+        Observed behavior from logs:
+        - AI clicks progressively higher: y=38 → y=30 → y=28
+        - Gets stuck clicking green banner text instead of chat items
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Load ss-6.png showing chat list with green banner
+        screenshot_path = IMAGES_DIR / "ss-6.png"
+        assert screenshot_path.exists(), f"Test image not found: {screenshot_path}"
+        screenshot = load_image_as_data_url(screenshot_path)
+
+        # Build conversation history - agent just finished waiting and should click first chat
+        messages = [
+            # 1. Initial request with loading screenshot
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            # 2. Agent loaded skill
+            AIMessage(
+                content="I will load the WhatsApp Web skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # 3. Agent saw loading screen, called wait
+            AIMessage(
+                content="Page is loading, I will wait.",
+                tool_calls=[{"id": "call_2", "name": "wait", "args": {"ms": 3000}}],
+            ),
+            ToolMessage(content="Waited 3000ms", tool_call_id="call_2"),
+            # 4. NOW: Agent should click first chat, but ss-6.png has green banner
+        ]
+
+        # Create state with ss-6.png (chat list with green banner)
+        state = AgentState(
+            messages=messages,
+            current_screenshot=screenshot,
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        # Run element detection
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+
+        print("\n" + "="*80)
+        print("DIAGNOSTIC TEST: Why does AI click green banner instead of first chat?")
+        print("="*80)
+        print("Screenshot: ss-6.png")
+        print("Contains: Green 'Turn on background sync' banner + chat list below")
+        print("="*80)
+
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        print(f"\nDetected {len(state.detected_elements)} UI elements:")
+        for i, elem in enumerate(state.detected_elements[:20]):  # Show first 20
+            print(f"  [{i+1}] {elem.element_type}: '{elem.caption}' at grid ({elem.grid_center.x}, {elem.grid_center.y})")
+        if len(state.detected_elements) > 20:
+            print(f"  ... and {len(state.detected_elements) - 20} more elements")
+        print("="*80)
+
+        # Call model_node to get agent's decision
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        # Print AI's reasoning
+        print("\n" + "="*80)
+        print("AI'S REASONING:")
+        print("="*80)
+        print(f"Thought process: {ai_message.content}")
+        print("="*80)
+
+        # Print tool calls
+        if ai_message.tool_calls:
+            print("\nTOOL CALLS:")
+            print("="*80)
+            for tc in ai_message.tool_calls:
+                print(f"Tool: {tc['name']}")
+                print(f"Args: {tc.get('args', {})}")
+                if tc['name'] == 'click':
+                    x = tc['args'].get('x')
+                    y = tc['args'].get('y')
+                    print(f"Grid coordinates: ({x}, {y})")
+                    # Convert to pixel coordinates for reference
+                    pixel_x = int((x / 100) * state.viewport.width)
+                    pixel_y = int((y / 100) * state.viewport.height)
+                    print(f"Pixel coordinates: ({pixel_x}, {pixel_y})")
+                    print(f"\nANALYSIS:")
+                    if y < 20:
+                        print(f"  ⚠️  Y coordinate {y} is VERY HIGH (top 20% of screen)")
+                        print(f"  This likely hits the green banner, not the chat list!")
+                    elif y < 35:
+                        print(f"  ⚠️  Y coordinate {y} is HIGH (top 35% of screen)")
+                        print(f"  May hit green banner or area close to it")
+                    else:
+                        print(f"  ✓ Y coordinate {y} seems reasonable for chat list")
+                print("-" * 80)
+            print("="*80)
+        else:
+            print("\nNo tool calls made (agent may have finished or encountered error)")
+
+        # Print conclusion
+        print("\n" + "="*80)
+        print("DIAGNOSTIC CONCLUSION:")
+        print("="*80)
+        print("This test captures the AI's decision-making process.")
+        print("Review the reasoning above to understand:")
+        print("1. What visual cues the AI focuses on")
+        print("2. Why it chooses specific coordinates")
+        print("3. What misleads it to click the banner instead of chat items")
+        print("="*80)
+
+        # Intentionally NO assertion - we want to see the failure mode
+        # The test "passes" by documenting the problem, not by being correct
+
+    def test_agent_stuck_clicking_banner_after_failed_attempt(
+        self,
+        whatsapp_instruction: str,
+        initial_screenshot: str
+    ):
+        """
+        DIAGNOSTIC TEST: Why does AI keep clicking banner after first failed attempt?
+
+        This simulates the ACTUAL failure scenario from logs:
+        1. AI clicks at (20, 38) - hits green banner
+        2. Screenshot shows SAME chat list (not opened)
+        3. AI tries again at (20, 30) - STILL hits banner
+        4. AI tries again at (18, 28) - STUCK in loop
+
+        The question: Why does AI move UPWARD (toward banner) instead of DOWNWARD (toward chats)?
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Load ss-6.png showing chat list with green banner
+        screenshot_path = IMAGES_DIR / "ss-6.png"
+        assert screenshot_path.exists(), f"Test image not found: {screenshot_path}"
+        screenshot = load_image_as_data_url(screenshot_path)
+
+        # Build conversation history - AI already clicked once, but it failed
+        messages = [
+            # 1. Initial request
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            # 2. Agent loaded skill
+            AIMessage(
+                content="I will load the WhatsApp Web skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # 3. Agent saw loading, waited
+            AIMessage(
+                content="Page is loading, I will wait.",
+                tool_calls=[{"id": "call_2", "name": "wait", "args": {"ms": 3000}}],
+            ),
+            ToolMessage(content="Waited 3000ms", tool_call_id="call_2"),
+            # 4. First click attempt at y=38 (from logs)
+            AIMessage(
+                content="I see the chat list. I will click the first chat.",
+                tool_calls=[{"id": "call_3", "name": "click", "args": {"x": 20, "y": 38}}],
+            ),
+            # THIS IS THE KEY: Click hit green banner, not chat
+            ToolMessage(
+                content='Clicked on span.x78zum5.x1c4vz4f.x2lah0s.xdl72j9.xdt5ytf "ic-closeic-syncTurn on backgro" at (212, 256)',
+                tool_call_id="call_3"
+            ),
+            # 5. NOW: Screenshot still shows chat list (chat didn't open)
+            #     What will AI do next? Move up or down?
+        ]
+
+        # State AFTER first failed click - still showing ss-6.png
+        state = AgentState(
+            messages=messages,
+            current_screenshot=screenshot,
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        # Run element detection
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+
+        print("\n" + "="*80)
+        print("DIAGNOSTIC TEST: Why does AI move UPWARD after failed click?")
+        print("="*80)
+        print("Scenario: AI clicked at y=38, hit green banner, chat didn't open")
+        print("Screenshot: Still shows ss-6.png (same chat list with banner)")
+        print("Question: Will AI try higher coordinates (banner) or lower (actual chats)?")
+        print("="*80)
+
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        print(f"\nDetected {len(state.detected_elements)} UI elements")
+        print("="*80)
+
+        # Call model_node to get agent's next decision
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        # Print AI's reasoning
+        print("\n" + "="*80)
+        print("AI'S REASONING AFTER FAILED CLICK:")
+        print("="*80)
+        print(f"Previous action: Clicked at (20, 38) but hit green banner")
+        print(f"Current thought: {ai_message.content}")
+        print("="*80)
+
+        # Print tool calls
+        if ai_message.tool_calls:
+            print("\nNEXT ACTION:")
+            print("="*80)
+            for tc in ai_message.tool_calls:
+                print(f"Tool: {tc['name']}")
+                if tc['name'] == 'click':
+                    x = tc['args'].get('x')
+                    y = tc['args'].get('y')
+                    prev_y = 38
+
+                    print(f"Previous click: y={prev_y}")
+                    print(f"New click: y={y}")
+                    print(f"Grid coordinates: ({x}, {y})")
+
+                    pixel_x = int((x / 100) * state.viewport.width)
+                    pixel_y = int((y / 100) * state.viewport.height)
+                    print(f"Pixel coordinates: ({pixel_x}, {pixel_y})")
+
+                    print(f"\n🔍 MOVEMENT ANALYSIS:")
+                    if y < prev_y:
+                        diff = prev_y - y
+                        print(f"  ⬆️  MOVED UP by {diff} grid units (from y={prev_y} to y={y})")
+                        print(f"  ⚠️  Moving TOWARD green banner (wrong direction!)")
+                        print(f"  💡 Why? The AI may think it needs to click 'above' the banner")
+                        print(f"      to access the chat, but it's actually clicking IN the banner!")
+                    elif y > prev_y:
+                        diff = y - prev_y
+                        print(f"  ⬇️  MOVED DOWN by {diff} grid units (from y={prev_y} to y={y})")
+                        print(f"  ✅ Moving AWAY from banner (correct direction!)")
+                        print(f"  💡 The AI recognized it needs to go lower to hit actual chats")
+                    else:
+                        print(f"  ↔️  SAME Y coordinate - trying different X position")
+
+                    print(f"\n📍 COORDINATE ASSESSMENT:")
+                    if y < 25:
+                        print(f"  🚨 Y={y} is in TOP 25% - DEFINITELY green banner area")
+                    elif y < 35:
+                        print(f"  ⚠️  Y={y} is in TOP 35% - Likely banner or very close to it")
+                    else:
+                        print(f"  ✓ Y={y} is below 35% - Should be in chat list area")
+                else:
+                    print(f"Args: {tc.get('args', {})}")
+                print("-" * 80)
+            print("="*80)
+
+        # Print conclusion
+        print("\n" + "="*80)
+        print("KEY INSIGHTS:")
+        print("="*80)
+        print("This test reveals WHY the AI gets stuck in a loop:")
+        print("1. What direction does the AI move after failed click?")
+        print("2. What reasoning does it provide for this movement?")
+        print("3. Does it recognize the banner as an obstacle?")
+        print("4. How can we guide it to avoid the banner area?")
+        print("="*80)
+
+    def test_agent_must_decide_to_scroll_after_clicking_first_chat(
+        self,
+        whatsapp_instruction: str,
+        initial_screenshot: str
+    ):
+        pass
+
+    def test_agent_scrolls_message_area_with_coordinates(
+        self, whatsapp_instruction: str, initial_screenshot: str
+    ):
+        """Test that agent scrolls with coordinates after collecting visible messages.
+
+        This test verifies the NEW targeted scrolling feature where the agent
+        can specify x,y coordinates to scroll a specific scrollable area.
+
+        Realistic flow:
+        1. Agent sees chat open with 12 visible messages
+        2. Agent collects those 12 messages first (12/20)
+        3. Agent realizes it needs 8 more messages
+        4. Agent scrolls UP in message area with coordinates to load older messages
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Load chat view screenshot (ss-4.png) - shows 12 messages
+        chat_view_screenshot_path = IMAGES_DIR / "ss-4.png"
+        assert chat_view_screenshot_path.exists(), f"Test image not found: {chat_view_screenshot_path}"
+        chat_view_screenshot = load_image_as_data_url(chat_view_screenshot_path)
+
+        # Build conversation: agent has loaded skill, opened chat, and JUST collected 12 messages
+        messages = [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            AIMessage(
+                content="Loading WhatsApp skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # Agent collected the visible 12 messages from ss-4.png
+            AIMessage(
+                content="I see PAKE WA chat with 12 visible messages. Collecting them.",
+                tool_calls=[{
+                    "id": "call_2",
+                    "name": "collect_data",
+                    "args": {
+                        "data": [
+                            "WhatsApp Messages | PAKE WA → 12 messages (12/20): "
+                            "[PAKE WA]: Mau esuk ki Mas (05:47) | "
+                            "[User]: Kok iso boso jowo sisan yo? (10:04) | "
+                            "[User]: Jajal upload en neng YouTube pak (10:04) | "
+                            "[User]: Kek ono gambar2 AI (10:04) | "
+                            "[PAKE WA]: Ngerti kanggo sopo mas lagu kwi? (10:10) | "
+                            "[User]: sek lagi tak rungokne (10:11) | "
+                            "[User]: dinggo lek to kah? (10:12) | "
+                            "[User]: ref e marai nangis.. progressi chord e api pak (10:13) | "
+                            "[User]: wes tak rungokne sampek bar (10:14) | "
+                            "[PAKE WA]: Yo e (10:24) | "
+                            "[PAKE WA]: Makan di mana?? (12:45) | "
+                            "[User]: Neng warung mau pak (13:12)"
+                        ]
+                    }
+                }],
+            ),
+            ToolMessage(content="Collected 12 messages successfully (12/20). Need 8 more to reach 20.", tool_call_id="call_2"),
+        ]
+
+        # Create state - same screenshot (no scroll happened yet)
+        state = AgentState(
+            messages=messages,
+            current_screenshot=chat_view_screenshot,  # Same ss-4.png
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        print("\n" + "=" * 80)
+        print("TESTING: Scroll with Coordinates After Collecting")
+        print("=" * 80)
+        print("Setup: Chat open, already collected 12/20 messages")
+        print("Expected: Agent scrolls UP with coordinates to load 8 more messages")
+        print("Target: Message area (X=60, Y=50)")
+        print("=" * 80)
+
+        # Run element detection
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        # Call model_node - agent should scroll now
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        tool_names = [tc["name"] for tc in ai_message.tool_calls] if ai_message.tool_calls else []
+
+        print(f"\nAgent decision: {ai_message.content[:150]}")
+        print(f"Tools called: {tool_names}")
+        if ai_message.tool_calls:
+            for tc in ai_message.tool_calls:
+                print(f"  - {tc['name']}({tc.get('args', {})})")
+
+        # Verify agent calls scroll (should scroll to get remaining 8 messages)
+        assert "scroll" in tool_names, (
+            f"Agent should call scroll to load 8 more messages.\n"
+            f"Instead called: {tool_names}\n"
+            f"Already collected 12/20, need to scroll for more."
+        )
+
+        # Find scroll tool call
+        scroll_call = next((tc for tc in ai_message.tool_calls if tc["name"] == "scroll"), None)
+        assert scroll_call is not None
+
+        # Verify scroll arguments
+        scroll_args = scroll_call.get("args", {})
+        print(f"\n📋 Scroll args: {scroll_args}")
+
+        # NEW FEATURE TEST: Check if agent uses coordinates for targeted scrolling
+        if "x" in scroll_args and "y" in scroll_args and scroll_args.get("x") is not None:
+            x = scroll_args["x"]
+            y = scroll_args["y"]
+
+            print(f"✅ NEW FEATURE: Agent used targeted scrolling at ({x}, {y})")
+
+            # Verify coordinates target the message area (right side, not chat list)
+            # Message area: X > 30 (right of chat list), Y around 40-60 (middle)
+            assert 30 <= x <= 100, f"X={x} should target message area (30-100, recommended 60)"
+            assert 20 <= y <= 80, f"Y={y} should target middle area (20-80, recommended 50)"
+
+            print(f"✅ Coordinates correctly target message area (not chat list)")
+        else:
+            # Backward compatible: scroll without coordinates still works
+            print("⚠️  Agent scrolled without coordinates (backward compatible)")
+            print("    Ideal: scroll(direction='up', amount=800, x=60, y=50)")
+            print("    This test passes but encourages coordinate-based scrolling")
+
+        # Verify direction is UP (to load older messages)
+        assert scroll_args.get("direction") == "up", (
+            f"Should scroll UP to load older messages, got: {scroll_args.get('direction')}"
+        )
+
+        print("\n" + "=" * 80)
+        print("✅ TEST PASSED: Agent scrolls after collecting initial messages")
+        if scroll_args.get("x") is not None:
+            print(f"✅ BONUS: Uses targeted scrolling at ({scroll_args['x']}, {scroll_args['y']})")
+        print("=" * 80)

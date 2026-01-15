@@ -79,6 +79,74 @@ WhatsApp Web has different states you may encounter:
 
 ---
 
+## Spatial Layout & Coordinates
+
+**Understanding WhatsApp Web's vertical layout (0-100 grid system):**
+
+### Top Section (Y: 0-35)
+- **Y coordinates 0-20:** Header area (logo, search bar, menu)
+- **Y coordinates 20-35:** Notification banners (green/yellow alerts like "Turn on background sync")
+- ⚠️ **WARNING:** This area contains UI chrome, NOT chat items
+
+### Middle-Bottom Section (Y: 35-100)
+- **Y coordinates 35-95:** Actual chat list area
+- **Y coordinates 40-60:** First 3-4 chat items (typical target zone)
+- **Y coordinates 60-85:** Chat items 5-10
+- **Y coordinates 85-95:** Bottom chat items / scroll area
+
+### Horizontal Layout (X coordinates)
+- **X coordinates 0-30:** Left sidebar (where chat list is)
+- **X coordinates 30-100:** Main content area (message view when chat is open)
+
+---
+
+## Scrolling Strategy
+
+WhatsApp Web has **TWO independent scrollable areas** that require targeted scrolling:
+
+### 1. Chat List (Left Sidebar)
+**When to scroll:** To see more conversations beyond the visible ones
+**Target coordinates:**
+- X=15 (middle of left sidebar)
+- Y=50 (middle of screen)
+**Example:**
+```
+scroll(direction='down', amount=400, x=15, y=50)  # See more chats
+scroll(direction='up', amount=400, x=15, y=50)    # Back to top of chat list
+```
+
+### 2. Message Area (Right Panel)
+**When to scroll:** To load older messages within an open chat conversation
+**Target coordinates:**
+- X=60 (middle of message area)
+- Y=50 (middle of screen)
+**Example:**
+```
+scroll(direction='up', amount=800, x=60, y=50)    # Load older messages
+scroll(direction='down', amount=800, x=60, y=50)  # See newer messages
+```
+
+### ⚠️ CRITICAL: Always Use Coordinates When Scrolling
+- **Without coordinates:** `scroll(direction='up', amount=800)` → Scrolls entire window (UNPREDICTABLE)
+- **With coordinates:** `scroll(direction='up', amount=800, x=60, y=50)` → Scrolls message area (PRECISE)
+
+The coordinate-based approach ensures you scroll the correct area, not the entire page or wrong section.
+
+---
+
+### Clicking on Chat Items
+When you need to click the first chat in the list:
+- **Safe Y range:** 40-55 (well below any banners)
+- **Safe X range:** 15-25 (centered in chat list area)
+- **Example coordinates:** (18, 45) or (20, 48)
+
+⚠️ **Common Mistakes to Avoid:**
+1. **Clicking too high (Y < 35):** You'll hit notification banners or header elements instead of chat items
+2. **Visual confusion:** The "first chat" appears near the top visually, but requires Y > 40 to avoid banner overlap
+3. **After failed click:** If you click and don't see a chat open, move DOWNWARD (increase Y), not upward
+
+---
+
 ## Common Interaction Patterns
 
 ### Opening a chat:
@@ -106,9 +174,10 @@ WhatsApp Web has different states you may encounter:
 4. Click on desired chat from filtered results
 
 ### Scrolling through messages:
-1. To see older messages: Scroll up in conversation area
-2. To see newer messages: Scroll down in conversation area
+1. To see older messages: `scroll(direction='up', amount=800, x=60, y=50)`
+2. To see newer messages: `scroll(direction='down', amount=800, x=60, y=50)`
 3. Messages load dynamically as you scroll
+4. **Always use coordinates** (see Scrolling Strategy section above)
 
 ---
 

@@ -33,17 +33,29 @@ def _get_available_skills() -> str:
 
 @tool(args_schema=LoadSkillArgs)
 def load_skill(skill_name: str) -> str:
-    """Load a specialized skill prompt for domain-specific browser automation.
+    """Load specialized guidance for automating specific websites or tasks.
 
-    Skills provide detailed instructions and context for interacting with
-    specific websites or performing specialized tasks. Use this tool when
-    you encounter a website or task that requires domain-specific knowledge.
+    WHEN TO USE: Call this tool FIRST when your task mentions a known website
+    (WhatsApp Web, LinkedIn, Gmail, etc.) to get site-specific instructions.
+
+    Skills provide:
+    - Page state identification (loading, loaded, error states)
+    - Exact UI coordinates and interaction patterns
+    - Step-by-step workflows for common tasks
+    - Format examples and edge case handling
+
+    IMPORTANT: You must provide the skill_name parameter (required field).
 
     Args:
-        skill_name: Name of the skill to load (without .skill.prompt.md extension)
+        skill_name: REQUIRED skill identifier (e.g., 'whatsapp-web')
+                   Do NOT call this with empty args - skill_name is mandatory.
 
     Returns:
-        The skill's prompt content with specialized instructions
+        Skill prompt with detailed site-specific instructions
+
+    Examples:
+        load_skill(skill_name="whatsapp-web")  # For WhatsApp Web tasks
+        load_skill(skill_name="linkedin-automation")  # For LinkedIn tasks
     """
     # Construct skill file path
     skill_file = SKILLS_DIR / f"{skill_name}.skill.prompt.md"

@@ -41,10 +41,15 @@ def tool_node(state: AgentState) -> dict:
     if not messages:
         return {}
 
+    # DEBUG: Log message history to understand state
+    logger.info(f"DEBUG tool_node called with {len(messages)} messages")
+    logger.info(f"DEBUG last 3 message types: {[type(m).__name__ for m in messages[-3:]]}")
+
     last_message = messages[-1]
 
     # Use isinstance() for type checking - NOT hasattr()
     if not isinstance(last_message, AIMessage):
+        logger.info(f"DEBUG last_message is not AIMessage, it's {type(last_message).__name__}")
         return {}
 
     # AIMessage always has tool_calls attribute (list, possibly empty)
@@ -56,6 +61,9 @@ def tool_node(state: AgentState) -> dict:
     # (could be extended to handle multiple tool calls)
     tool_call = tool_calls[0]
     tool_name = tool_call["name"]  # type: ignore[arg-type]
+
+    # DEBUG: Log the full tool_call structure to diagnose args issue
+    logger.info(f"DEBUG tool_call structure: name={tool_name}, args_keys={list(tool_call.get('args', {}).keys())}, full_tool_call={tool_call}")
 
     # Check if this is a server-side tool
     if tool_name in SERVER_SIDE_TOOLS:

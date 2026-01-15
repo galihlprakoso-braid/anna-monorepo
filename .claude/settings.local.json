@@ -16,7 +16,15 @@
       "Bash(brew list:*)",
       "Bash(docker:*)",
       "Bash(uv run pytest:*)",
-      "Bash(.venv/bin/pytest:*)"
+      "Bash(.venv/bin/pytest:*)",
+      "Bash(test:*)",
+      "Bash(source .env)",
+      "Bash(tee:*)",
+      "Bash(chmod:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(pkill:*)",
+      "Bash(.venv/bin/langsmith-fetch:*)",
+      "Bash(python3:*)"
     ]
   }
 }

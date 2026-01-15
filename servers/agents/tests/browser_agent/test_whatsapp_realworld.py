@@ -1593,3 +1593,164 @@ Remember: Call collect_data multiple times (once per chat or after each scroll).
         if scroll_args.get("x") is not None:
             print(f"✅ BONUS: Uses targeted scrolling at ({scroll_args['x']}, {scroll_args['y']})")
         print("=" * 80)
+
+    def test_agent_avoids_duplicate_collection(
+        self, whatsapp_instruction: str, initial_screenshot: str
+    ):
+        """Test that agent does NOT re-collect data from the same chat/location.
+
+        This is the CRITICAL test for preventing duplicate collections.
+
+        Scenario:
+        1. Agent has loaded skill and opened a chat
+        2. Agent collected messages from this chat (e.g., "PAKE WA" - 5 messages)
+        3. ToolMessage confirmed successful collection
+        4. Screenshot STILL shows the SAME chat (no UI change)
+        5. Agent should realize it already collected and MOVE ON:
+           - Option A: Scroll to see NEW messages (older/newer)
+           - Option B: Click DIFFERENT chat to explore
+           - Option C: Report task progress/completion
+        6. Agent should NOT call collect_data() again with same content
+
+        This tests the prompt engineering in system.prompt.md:
+        - "Check conversation history - Did you already call collect_data?"
+        - "Track what you collected - Which chats you already collected from"
+        - "Move to unexplored areas - If you already collected from current location"
+        """
+        # Load skill content
+        from pathlib import Path
+        skill_path = Path(__file__).parent.parent.parent / "src" / "agents" / "browser_agent" / "prompts" / "skills" / "whatsapp-web.skill.prompt.md"
+        with open(skill_path, "r") as f:
+            skill_content = f.read()
+
+        # Use ss-4.png (PAKE WA chat open with visible messages)
+        chat_screenshot_path = IMAGES_DIR / "ss-4.png"
+        assert chat_screenshot_path.exists(), f"Test image not found: {chat_screenshot_path}"
+        chat_screenshot = load_image_as_data_url(chat_screenshot_path)
+
+        # Build conversation: agent opened chat and ALREADY collected data
+        messages = [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": whatsapp_instruction},
+                    {"type": "image_url", "image_url": {"url": initial_screenshot}},
+                ]
+            ),
+            # Agent loaded skill
+            AIMessage(
+                content="Loading WhatsApp skill.",
+                tool_calls=[{"id": "call_1", "name": "load_skill", "args": {"skill_name": "whatsapp-web"}}],
+            ),
+            ToolMessage(content=skill_content, tool_call_id="call_1"),
+            # Agent clicked on PAKE WA chat
+            AIMessage(
+                content="I see PAKE WA chat in the list. I will click it to open.",
+                tool_calls=[{"id": "call_2", "name": "click", "args": {"x": 20, "y": 45}}],
+            ),
+            ToolMessage(content="Clicked at (20, 45)", tool_call_id="call_2"),
+            # Agent ALREADY collected 12 messages from this chat (ALL visible messages in ss-4.png)
+            AIMessage(
+                content="I see PAKE WA chat with 12 visible messages. I will collect them (12/20).",
+                tool_calls=[{
+                    "id": "call_3",
+                    "name": "collect_data",
+                    "args": {
+                        "data": [
+                            "WhatsApp Messages | PAKE WA → 12 messages (12/20): "
+                            "[User]: Mau esuk ki Mas (05:47) | "
+                            "[PAKE WA]: Kok iso boso jowo sisan yo? (10:04) | "
+                            "[User]: Jajal upload en neng YouTube pak (10:04) | "
+                            "[User]: Kek ono gambar2 AI (10:04) | "
+                            "[PAKE WA]: Ngerti kanggo sopo mas lagu kwi? (10:10) | "
+                            "[User]: sek lagi tak rungokne (10:11) | "
+                            "[User]: dinggo lek to kah? (10:12) | "
+                            "[User]: ref e marai nangis.. progressi chord e api pak (10:13) | "
+                            "[User]: wes tak rungokne sampek bar (10:14) | "
+                            "[PAKE WA]: Yo e (10:24) | "
+                            "[PAKE WA]: Makan di mana?? (12:45) | "
+                            "[User]: Neng warung mau pak (13:12)"
+                        ]
+                    }
+                }],
+            ),
+            # ✅ IMPORTANT: ToolMessage confirms collection was successful
+            ToolMessage(
+                content="Successfully collected 12 items. Data submitted for processing.",
+                tool_call_id="call_3"
+            ),
+        ]
+
+        # State: SAME screenshot (chat still showing same messages, no UI change)
+        state = AgentState(
+            messages=messages,
+            current_screenshot=chat_screenshot,  # Still showing PAKE WA chat
+            viewport=Viewport(width=1280, height=800),
+            detected_elements=[],
+        )
+
+        # Run element detection
+        from agents.browser_agent.nodes.element_detection_node import element_detection_node
+        detection_result = element_detection_node(state)
+        state.detected_elements = detection_result.get("detected_elements", [])
+
+        # Call model_node - agent should MOVE ON, not re-collect
+        result = model_node(state)
+
+        # Extract agent's response
+        assert "messages" in result
+        ai_message = result["messages"][0]
+        assert isinstance(ai_message, AIMessage)
+
+        tool_names = [tc["name"] for tc in ai_message.tool_calls] if ai_message.tool_calls else []
+
+        print("\n" + "=" * 80)
+        print("AGENT DECISION AFTER SUCCESSFUL COLLECTION:")
+        print("=" * 80)
+        print(f"Agent reasoning: {ai_message.content}")
+        print(f"Tools called: {tool_names}")
+        if ai_message.tool_calls:
+            for tc in ai_message.tool_calls:
+                print(f"  - {tc['name']}({tc.get('args', {})})")
+        print("=" * 80)
+
+        # CRITICAL ASSERTION: Agent should NOT call collect_data again
+        assert "collect_data" not in tool_names, (
+            f"❌ DUPLICATE COLLECTION DETECTED!\n"
+            f"Agent already collected from PAKE WA chat (12 messages - ALL visible).\n"
+            f"ToolMessage confirmed: 'Successfully collected 12 items.'\n"
+            f"Screenshot STILL shows SAME chat with SAME 12 messages.\n"
+            f"Agent should MOVE ON (scroll or click next chat), NOT re-collect.\n"
+            f"Instead, agent called: {tool_names}\n"
+            f"Reasoning: {ai_message.content}\n"
+            f"\n"
+            f"Expected behavior:\n"
+            f"  - Option A: scroll (to see NEW older/newer messages beyond the 12)\n"
+            f"  - Option B: click (to open DIFFERENT chat)\n"
+            f"  - Option C: Text response (report progress: '12/20 collected, moving to next chat')\n"
+        )
+
+        # POSITIVE ASSERTION: Agent should move on
+        valid_actions = ["scroll", "click", "screenshot"]
+        has_valid_action = any(tool in tool_names for tool in valid_actions)
+
+        # Allow text-only response if agent is reporting completion/progress
+        has_text_response = bool(ai_message.content and len(ai_message.content.strip()) > 10)
+
+        assert has_valid_action or has_text_response, (
+            f"Agent avoided duplicate collection ✅ but didn't move on.\n"
+            f"Expected: scroll (for more messages) OR click (next chat) OR text response (progress report)\n"
+            f"Got: {tool_names if tool_names else 'text only: ' + ai_message.content}"
+        )
+
+        # Success messages
+        print("\n" + "=" * 80)
+        print("✅ TEST PASSED: Agent avoids duplicate collection")
+        print(f"✅ Agent recognized it already collected from this chat")
+        print(f"✅ Agent moved on with: {tool_names if tool_names else 'text response'}")
+        if "scroll" in tool_names:
+            print("   → Agent will scroll to see NEW messages (good!)")
+        elif "click" in tool_names:
+            print("   → Agent will click DIFFERENT chat (good!)")
+        elif has_text_response:
+            print("   → Agent reported progress/completion (good!)")
+        print("=" * 80)

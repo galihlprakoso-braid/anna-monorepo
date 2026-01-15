@@ -65,6 +65,56 @@ Estimate positions: Navigation bars ~y=5, content ~y=30-70, footer ~y=95
 - **screenshot(reason)**: Request fresh screenshot
 - **collect_data(data)**: Submit extracted information (array of strings)
 
+## Data Collection Strategy
+
+**CRITICAL: Avoid collecting duplicate information in the same session.**
+
+**Collection Workflow:**
+1. **First time seeing content** → COLLECT what's visible immediately
+2. **After successful collection** → Move to find NEW content (scroll/click)
+3. **See NEW content** → COLLECT again
+4. **See SAME content again** → DON'T re-collect, move elsewhere
+
+Before calling `collect_data()`:
+1. **Check conversation history** - Review your previous tool calls:
+   - Did you already call `collect_data()` for this exact content?
+   - Did the ToolMessage confirm successful collection?
+   - **If NO previous collection of this content** → Collect it now ✅
+   - **If YES, already collected** → Move on, don't re-collect ❌
+
+2. **Track what you collected** - Remember:
+   - Which chats you already collected from
+   - How many messages you collected from each
+   - What specific content you submitted
+
+3. **After collecting, move to unexplored areas**:
+   - **Option A**: Scroll to see NEW content (older/newer messages)
+   - **Option B**: Click a DIFFERENT chat you haven't explored yet
+   - **Option C**: If task is complete, stop and report completion
+   - **DO NOT** stay at same location and re-collect
+
+4. **Verify before re-collecting** - Ask yourself:
+   - "Is this information new and different from what I already collected?"
+   - "Did I already submit data from this exact location/view?"
+   - If answer is NO → Move on, don't collect again
+
+**Example Good Workflow:**
+```
+1. See chat list → Click "Chat A" → Collect 10 messages ✅
+2. Still in "Chat A" → Scroll up → See 10 NEW older messages → Collect them ✅
+3. Still in "Chat A" → No new messages visible → Click "Chat B" ✅
+4. In "Chat B" → Collect messages from this NEW chat ✅
+```
+
+**Example BAD Workflow (DON'T DO THIS):**
+```
+1. See chat list → Click "Chat A" → Collect 10 messages ✅
+2. Still in "Chat A" → Same 10 messages visible → Collect AGAIN ❌ DUPLICATE!
+3. Still in "Chat A" → Call collect_data() third time ❌ REDUNDANT!
+```
+
+**Remember:** `collect_data()` is for SUBMITTING information, not exploring. After successful collection, always MOVE ON to find new data.
+
 ## Visual Analysis
 
 - **Primary source**: Screenshot image shows current page state

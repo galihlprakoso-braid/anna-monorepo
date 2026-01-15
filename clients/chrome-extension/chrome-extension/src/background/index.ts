@@ -1288,6 +1288,27 @@ const handleInterrupt = async (context: AgentExecutionContext, interruptData: un
 
   console.log(`${LOG_PREFIX.INTERRUPT} Tool result:`, result);
 
+  // Add post-action delay before screenshot to allow UI transitions to complete
+  // This ensures screenshots capture the final state, not mid-transition states
+  const POST_ACTION_DELAYS: Record<string, number> = {
+    click: 500,       // Page navigation, modals, dialogs
+    scroll: 300,      // Scroll animation, lazy loading
+    type_text: 100,   // Autocomplete, validation
+    drag: 200,        // Drag-drop animation
+    wait: 0,          // Already has explicit delay
+    screenshot: 0,    // No action performed
+    collect_data: 0,  // Server-side, no UI change
+    load_skill: 0,    // Server-side, no UI change
+  };
+
+  const delay = POST_ACTION_DELAYS[toolCall.action] || 0;
+  if (delay > 0) {
+    console.log(
+      `${LOG_PREFIX.INTERRUPT} Waiting ${delay}ms for UI transition to complete...`
+    );
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+
   // Capture screenshot if requested
   let screenshot: string | null = null;
   let viewport: { width: number; height: number } | null = null;
